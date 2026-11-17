@@ -239,13 +239,60 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // 안전한 경량 마크다운 -> 보기 좋은 HTML 변환 (XSS 방지 이스케이프 포함)
+  function setBotFormattedContent(bubble, rawText) {
+    const escaped = String(rawText || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    const applyInline = (line) =>
+      line
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\[매수\s*우위\]/g, '<span class="stance-badge buy">매수 우위</span>')
+        .replace(/\[매도(?:\(관망\))?\s*우위\]/g, '<span class="stance-badge sell">매도(관망) 우위</span>')
+        .replace(/\[중립\]/g, '<span class="stance-badge neutral">중립</span>');
+
+    const lines = escaped.split(/\r?\n/);
+    const htmlParts = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        htmlParts.push('<div class="bot-spacer"></div>');
+        continue;
+      }
+      if (/^[-*_]{3,}$/.test(line)) {
+        htmlParts.push('<hr class="bot-divider" />');
+        continue;
+      }
+      const headingMatch = line.match(/^#{1,4}\s+(.*)$/);
+      if (headingMatch) {
+        htmlParts.push(`<div class="bot-heading">${applyInline(headingMatch[1])}</div>`);
+        continue;
+      }
+      const bulletMatch = line.match(/^[-*•]\s+(.*)$/);
+      if (bulletMatch) {
+        htmlParts.push(`<div class="bot-bullet">• ${applyInline(bulletMatch[1])}</div>`);
+        continue;
+      }
+      htmlParts.push(`<div class="bot-line">${applyInline(line)}</div>`);
+    }
+
+    bubble.innerHTML = htmlParts.join("");
+  }
+
   // 채팅 말풍선 헬퍼
   function appendChatBubble(container, role, text) {
     const msgDiv = document.createElement("div");
     msgDiv.className = `chat-msg ${role}`;
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble";
-    bubble.textContent = text;
+    if (role === "bot") {
+      setBotFormattedContent(bubble, text);
+    } else {
+      bubble.textContent = text;
+    }
     msgDiv.appendChild(bubble);
     container.appendChild(msgDiv);
     container.scrollTop = container.scrollHeight;
@@ -332,7 +379,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error(data.error || "분석 요청에 실패했습니다.");
 
       t1ConversationId = data.conversation_id || t1ConversationId;
-      thinkingBubble.textContent = data.answer || "응답이 비어 있습니다.";
+      setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
+      t1ChatMessages.scrollTop = t1ChatMessages.scrollHeight;
 
       if (data.stock_data) {
         const s = data.stock_data.snapshot || {};
@@ -714,7 +762,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error(data.error || "지표해석기 호출 실패");
 
       t3ConversationId = data.conversation_id || t3ConversationId;
-      thinkingBubble.textContent = data.answer || "응답이 비어 있습니다.";
+      setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
+      t3ChatMessages.scrollTop = t3ChatMessages.scrollHeight;
     } catch (err) {
       thinkingBubble.textContent = `오류: ${err.message}`;
       console.error(`[ERROR]      요청 또는 렌더링 중 오류 발생 (${err.message})`);

@@ -786,3 +786,66 @@ body {
   background: #94a3b8;
   cursor: not-allowed;
 }
+
+/* 봇 리포트 가독성 스타일 */
+.chat-msg.bot .chat-bubble {
+  white-space: normal;
+  padding: 14px 18px;
+}
+
+.bot-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.bot-heading:first-child {
+  margin-top: 0;
+}
+
+.bot-line {
+  margin-bottom: 4px;
+}
+
+.bot-bullet {
+  padding-left: 10px;
+  margin-bottom: 4px;
+}
+
+.bot-spacer {
+  height: 6px;
+}
+
+.bot-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 10px 0;
+}
+
+.stance-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.stance-badge.buy {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.stance-badge.sell {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.stance-badge.neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
