@@ -1,5 +1,6 @@
 :root {
-  --bg-page: #f3f6fa;
+  color-scheme: light;
+  --bg-page: #f5f7fa;
   --bg-card: #ffffff;
   --text-main: #1e293b;
   --text-muted: #64748b;

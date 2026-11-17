@@ -251,7 +251,7 @@ def technical_chat():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 5050))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     logger.info("[START] Flask server starting on http://127.0.0.1:%s (debug=%s)", port, debug)
-    app.run(host="127.0.0.1", port=port, debug=debug)
+    app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False)
