@@ -765,3 +765,24 @@ body {
 .chart-container.small {
   height: 240px;
 }
+
+.primary-small-btn {
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.primary-small-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.primary-small-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}

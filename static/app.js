@@ -255,7 +255,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------------
   // 탭 1: 종목 심층분석 채팅 (Dify 일반 챗봇 ①)
   // -------------------------------------------------------------------------
+  const t1SelectForm = document.getElementById("t1SelectForm");
   const t1CodeInput = document.getElementById("t1CodeInput");
+  const t1AnalyzeBtn = document.getElementById("t1AnalyzeBtn");
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1ErrorBox = document.getElementById("t1ErrorBox");
   const t1ChatMessages = document.getElementById("t1ChatMessages");
@@ -267,57 +269,64 @@ document.addEventListener("DOMContentLoaded", () => {
   let t1ConversationId = "";
   let t1LastCode = "";
 
-  function resetTab1Chat(notice = "새 대화가 시작되었습니다. 종목코드와 질문을 입력해 주세요.") {
+  function resetTab1Chat(
+    notice = "새 대화가 시작되었습니다. 종목을 선택하거나 '종목 분석 시작'을 눌러주세요."
+  ) {
     t1ConversationId = "";
+    t1LastCode = "";
     t1ChatMessages.innerHTML = "";
     appendChatBubble(t1ChatMessages, "bot", notice);
     t1ContextBar.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
   }
 
-  t1ResetBtn.addEventListener("click", () => resetTab1Chat());
+  function setTab1Busy(isBusy) {
+    t1AnalyzeBtn.disabled = isBusy;
+    t1SendBtn.disabled = isBusy;
+    t1QuestionInput.disabled = isBusy;
+    t1CodeInput.disabled = isBusy;
+  }
 
-  document.querySelectorAll(".t1-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const code = btn.dataset.code;
-      t1CodeInput.value = code;
-      if (t1LastCode && t1LastCode !== code) {
-        resetTab1Chat(`종목이 ${code}로 변경되어 새 대화를 시작합니다.`);
-      }
-    });
-  });
-
-  t1ChatForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const code = t1CodeInput.value.trim();
-    const question = t1QuestionInput.value.trim();
-
+  async function sendTab1Request(code, question = "", isInitial = false) {
     if (!/^\d{6}$/.test(code)) {
       t1ErrorBox.textContent = "종목코드는 6자리 숫자여야 합니다. (예: 000660)";
       t1ErrorBox.classList.remove("hidden");
       return;
     }
-    if (!question) return;
 
-    if (t1LastCode && t1LastCode !== code) {
+    t1ErrorBox.classList.add("hidden");
+
+    if (isInitial || (t1LastCode && t1LastCode !== code)) {
       t1ConversationId = "";
+      if (isInitial) {
+        t1ChatMessages.innerHTML = "";
+        t1ContextBar.classList.add("hidden");
+      }
     }
     t1LastCode = code;
 
-    t1ErrorBox.classList.add("hidden");
-    appendChatBubble(t1ChatMessages, "user", `[${code}] ${question}`);
-    t1QuestionInput.value = "";
-    const thinkingBubble = appendChatBubble(t1ChatMessages, "bot", "실시간 데이터 수집 및 Dify AI 분석 중...");
+    const userDisplay = isInitial
+      ? `[${code}] 애널리스트 종합 심층 분석 요청`
+      : `[${code}] ${question}`;
+    appendChatBubble(t1ChatMessages, "user", userDisplay);
 
-    t1SendBtn.disabled = true;
-    t1QuestionInput.disabled = true;
-    console.log(`[CHAT]       Dify 챗봇 요청 시작 (tab1, code=${code})`);
+    const loadingMsg = isInitial
+      ? "실시간 데이터 수집 및 애널리스트 심층 분석 리포트 작성 중..."
+      : "분석된 데이터를 바탕으로 후속 질문 답변 작성 중...";
+    const thinkingBubble = appendChatBubble(t1ChatMessages, "bot", loadingMsg);
+
+    setTab1Busy(true);
+    console.log(`[CHAT]       Dify 챗봇 요청 시작 (tab1, code=${code}, initial=${isInitial})`);
 
     try {
       const res = await fetch("/api/chat/analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, question, conversation_id: t1ConversationId }),
+        body: JSON.stringify({
+          code,
+          question,
+          conversation_id: t1ConversationId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "분석 요청에 실패했습니다.");
@@ -338,10 +347,36 @@ document.addEventListener("DOMContentLoaded", () => {
       t1ErrorBox.classList.remove("hidden");
       console.error(`[ERROR]      요청 또는 렌더링 중 오류 발생 (${err.message})`);
     } finally {
-      t1SendBtn.disabled = false;
-      t1QuestionInput.disabled = false;
+      setTab1Busy(false);
       t1QuestionInput.focus();
     }
+  }
+
+  t1ResetBtn.addEventListener("click", () => resetTab1Chat());
+
+  // 1) 종목 분석 시작 버튼 또는 코드 입력 후 엔터 -> 즉시 1차 종합 분석 실행
+  t1SelectForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendTab1Request(t1CodeInput.value.trim(), "", true);
+  });
+
+  // 2) 빠른 종목 버튼 클릭 -> 코드 채우고 즉시 1차 종합 분석 실행
+  document.querySelectorAll(".t1-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.code;
+      t1CodeInput.value = code;
+      sendTab1Request(code, "", true);
+    });
+  });
+
+  // 3) 하단 후속 질문 폼
+  t1ChatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const code = t1CodeInput.value.trim();
+    const question = t1QuestionInput.value.trim();
+    if (!question) return;
+    t1QuestionInput.value = "";
+    sendTab1Request(code, question, !t1ConversationId);
   });
 
   // -------------------------------------------------------------------------

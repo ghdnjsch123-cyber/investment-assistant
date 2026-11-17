@@ -98,45 +98,72 @@ def fetch_stock():
 
 @app.route("/api/chat/analysis", methods=["POST"])
 def chat_analysis():
-    """[탭1] 종목코드로 수집기(collector.py) 실행 후 Dify 일반 챗봇 ①에 근거 JSON을 전달해 답변을 받습니다."""
+    """[탭1] 종목코드로 수집기(collector.py) 실행 후 Dify 일반 챗봇 ①에 근거 JSON을 전달해 전문가 분석을 받고, 이후 후속 질문을 이어갑니다."""
     payload = request.get_json(silent=True) or {}
     raw_code = payload.get("code", "")
     question = (payload.get("question") or "").strip()
     conversation_id = (payload.get("conversation_id") or "").strip()
 
-    logger.info("[REQUEST] POST /api/chat/analysis code=%s", raw_code)
+    logger.info("[REQUEST] POST /api/chat/analysis code=%s (followup=%s)", raw_code, bool(conversation_id))
 
     try:
         code = validate_stock_code(raw_code)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    if not question:
-        question = "수집된 데이터를 바탕으로 이 종목의 시세, 밸류에이션, 재무실적, 최근 뉴스를 종합적으로 분석해 주세요."
-
     try:
+        # 이미 해당 종목으로 대화가 시작된 후속 질문인 경우: 재수집 없이 Dify 대화 맥락을 이어감
+        if conversation_id and question:
+            dify_res = ask_dify_chatbot(
+                bot_type="analysis",
+                query=question,
+                inputs={},
+                conversation_id=conversation_id,
+            )
+            logger.info("[RESPONSE] /api/chat/analysis 후속 질문 완료 (code=%s)", code)
+            return jsonify({
+                "answer": dify_res["answer"],
+                "conversation_id": dify_res["conversation_id"],
+                "stock_data": None,
+            }), 200
+
+        # 최초 분석: 실시간 데이터 수집 + 전문가/애널리스트 심층 리포트 프롬프트 적용
         stock_data = collect_stock_data(code)
         if not stock_data.get("name"):
             err_msg = stock_data["errors"][0]["message"] if stock_data.get("errors") else "종목 기본 정보를 가져오지 못했습니다."
             return jsonify({"error": err_msg}), 400
 
         stock_json = json.dumps(stock_data, ensure_ascii=False)
+        stock_name = stock_data.get("name", "")
+
+        if not question:
+            question = (
+                "당신은 여의도 증권사의 수석 애널리스트입니다. 아래 실시간 수집 데이터(JSON)만을 근거로 "
+                f"{stock_name}({code})에 대한 전문 애널리스트 심층 분석 리포트를 작성해 주세요.\n\n"
+                "다음 5가지 항목으로 구조화하여 구체적인 수치를 인용해 설명해 주세요:\n"
+                "1. **시세 및 모멘텀 진단**: 현재가, 등락률, 52주 최고/최저 대비 현재 가격 위치, 거래량·외인소진율\n"
+                "2. **밸류에이션 및 컨센서스 평가**: 현재 PER vs 추정 PER 변화, PBR·BPS 수준, 증권사 목표주가 대비 괴리율\n"
+                "3. **재무 펀더멘털(수익성·안정성)**: 최근 3~5년 매출·영업이익·영업이익률·ROE·부채비율·영업활동현금흐름 추이 (단, is_consensus가 true인 연도는 반드시 '추정치(E)'로 구분 표시)\n"
+                "4. **최신 뉴스 모멘텀 및 이슈**: 제공된 최신 뉴스 5건을 바탕으로 핵심 호재 및 리스크 요인 정리\n"
+                "5. **애널리스트 종합 의견**: 객관적 핵심 투자 포인트와 향후 체크해야 할 리스크 요약 (단정적 매수/매도 권유는 지양)\n"
+                "마지막으로 사용자가 이어서 후속 질문을 할 수 있도록 안내해 주세요."
+            )
+
         enriched_query = (
-            f"[종목 분석 요청: {stock_data.get('name')} ({code})]\n"
-            f"아래 실시간 수집 데이터(JSON)만을 근거로 사용자 질문에 답변해 주세요. "
-            f"(재무실적에서 is_consensus가 true인 항목은 추정치임을 명시)\n\n"
+            f"[종목 심층 분석 요청: {stock_name} ({code})]\n"
+            f"반드시 아래 실시간 수집 데이터(JSON)에 포함된 팩트와 숫자만을 근거로 답변하세요.\n\n"
             f"--- 수집 데이터(JSON) ---\n{stock_json}\n\n"
-            f"--- 사용자 질문 ---\n{question}"
+            f"--- 요청 내용 ---\n{question}"
         )
 
         dify_res = ask_dify_chatbot(
             bot_type="analysis",
             query=enriched_query,
-            inputs={"stock_data": stock_json, "stock_code": code, "stock_name": stock_data.get("name", "")},
-            conversation_id=conversation_id,
+            inputs={"stock_data": stock_json, "stock_code": code, "stock_name": stock_name},
+            conversation_id="",
         )
 
-        logger.info("[RESPONSE] /api/chat/analysis 완료 (code=%s, name=%s)", code, stock_data.get("name"))
+        logger.info("[RESPONSE] /api/chat/analysis 최초 애널리스트 분석 완료 (code=%s, name=%s)", code, stock_name)
         return jsonify({
             "answer": dify_res["answer"],
             "conversation_id": dify_res["conversation_id"],
