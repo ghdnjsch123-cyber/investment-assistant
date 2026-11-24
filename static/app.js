@@ -1853,6 +1853,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t4ReportBody.innerHTML = "";
     t4ContextBar.classList.add("hidden");
     t4SummaryCard.classList.add("hidden");
+    document.getElementById("t4LiquidationCard")?.classList.add("hidden");
     t4ErrorBox.classList.add("hidden");
     t4AutocompleteList.classList.add("hidden");
   }
@@ -2225,6 +2226,67 @@ document.addEventListener("DOMContentLoaded", () => {
     t4MarketBar.textContent = `Binance USDT 현물·선물 실시간 · 환율 ${kimchi.usd_krw ? formatNumber(kimchi.usd_krw, "원") : "-"}`;
     t4SummaryCard.classList.remove("hidden");
 
+    // 3) 롱/숏 청산 로드맵 렌더링
+    const liqCard = document.getElementById("t4LiquidationCard");
+    const liq = coinData.liquidation_roadmap;
+    if (liqCard && liq && liq.available) {
+      const diagBadge = document.getElementById("t4LiqDiagnosisBadge");
+      diagBadge.textContent = liq.squeeze_diagnosis || "-";
+      diagBadge.className = `t4-liq-diag-badge ${liq.dominant_side || "balanced"}`;
+
+      const ratioWrap = document.getElementById("t4LiqRatioBarWrap");
+      ratioWrap.innerHTML = `
+        <div class="t4-ratio-box">
+          <div class="t4-ratio-labels">
+            <span>글로벌 계정 롱 ${liq.global_long_pct}%</span>
+            <span>비율 ${liq.global_ls_ratio}</span>
+            <span>숏 ${liq.global_short_pct}%</span>
+          </div>
+          <div class="t4-ratio-bar">
+            <div class="t4-ratio-long" style="width: ${liq.global_long_pct}%;"></div>
+            <div class="t4-ratio-short" style="width: ${liq.global_short_pct}%;"></div>
+          </div>
+        </div>
+        <div class="t4-ratio-box">
+          <div class="t4-ratio-labels">
+            <span>상위 트레이더 롱 ${liq.top_long_pct}%</span>
+            <span>테이커 매수/매도 ${liq.taker_buy_sell_ratio}</span>
+            <span>숏 ${liq.top_short_pct}%</span>
+          </div>
+          <div class="t4-ratio-bar">
+            <div class="t4-ratio-long" style="width: ${liq.top_long_pct}%;"></div>
+            <div class="t4-ratio-short" style="width: ${liq.top_short_pct}%;"></div>
+          </div>
+        </div>
+      `;
+
+      const renderLevels = (elId, levels) => {
+        const el = document.getElementById(elId);
+        if (!el) return;
+        const maxAmt = Math.max(...levels.map((x) => x.est_liq_usdt || 0), 1);
+        el.innerHTML = levels
+          .map((lv) => {
+            const pct = Math.max(8, Math.round(((lv.est_liq_usdt || 0) / maxAmt) * 100));
+            const mvSign = lv.move_pct > 0 ? "+" : "";
+            return `
+              <div class="t4-liq-row" title="${lv.tag}">
+                <div class="t4-liq-bar-bg" style="width: ${pct}%;"></div>
+                <span class="t4-liq-lev">${lv.leverage}</span>
+                <span class="t4-liq-price">${formatUsdPrice(lv.liq_price, dec)} <small>(${mvSign}${lv.move_pct}%)</small></span>
+                <span class="t4-liq-amt">${formatUsdCompact(lv.est_liq_usdt)}</span>
+              </div>
+            `;
+          })
+          .join("");
+      };
+
+      renderLevels("t4ShortLiqList", liq.short_squeeze_levels || []);
+      renderLevels("t4LongLiqList", liq.long_squeeze_levels || []);
+      liqCard.classList.remove("hidden");
+    } else if (liqCard) {
+      liqCard.classList.add("hidden");
+    }
+
     if (coinData.tv_chart) {
       t4CurrentMeta = { market: info.usdt_symbol, name: info.korean_name || info.symbol };
       t4CurrentChartData = coinData.tv_chart;
@@ -2259,6 +2321,7 @@ document.addEventListener("DOMContentLoaded", () => {
         t4ReportBody.innerHTML = "";
         t4ContextBar.classList.add("hidden");
         t4SummaryCard.classList.add("hidden");
+    document.getElementById("t4LiquidationCard")?.classList.add("hidden");
       }
     }
 

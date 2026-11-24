@@ -569,14 +569,164 @@ def _summarize_technical(tv_chart: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def fetch_liquidation_roadmap(
+    usdt_symbol: str,
+    mark_price: float,
+    open_interest_usdt: float,
+    price_dec: int = 2,
+) -> dict[str, Any]:
+    """바이낸스 선물 롱/숏 비율 + 미결제약정 + 레버리지별 예상 청산 가격대 로드맵 생성."""
+    if not mark_price or mark_price <= 0:
+        return {"available": False, "reason": "선물 마크가격 없음"}
+
+    base_data_url = "https://fapi.binance.com/futures/data"
+    global_long_pct = 50.0
+    global_short_pct = 50.0
+    global_ls_ratio = 1.0
+    top_long_pct = 50.0
+    top_short_pct = 50.0
+    top_ls_ratio = 1.0
+    taker_buy_sell_ratio = 1.0
+
+    try:
+        r1 = requests.get(
+            f"{base_data_url}/globalLongShortAccountRatio",
+            params={"symbol": usdt_symbol, "period": "1h", "limit": 1},
+            headers=_HEADERS,
+            timeout=6,
+        )
+        if r1.ok and r1.json():
+            row = r1.json()[0]
+            global_long_pct = round(float(row.get("longAccount", 0.5)) * 100.0, 2)
+            global_short_pct = round(float(row.get("shortAccount", 0.5)) * 100.0, 2)
+            global_ls_ratio = round(float(row.get("longShortRatio", 1.0)), 2)
+    except Exception:
+        pass
+
+    try:
+        r2 = requests.get(
+            f"{base_data_url}/topLongShortPositionRatio",
+            params={"symbol": usdt_symbol, "period": "1h", "limit": 1},
+            headers=_HEADERS,
+            timeout=6,
+        )
+        if r2.ok and r2.json():
+            row = r2.json()[0]
+            top_long_pct = round(float(row.get("longAccount", 0.5)) * 100.0, 2)
+            top_short_pct = round(float(row.get("shortAccount", 0.5)) * 100.0, 2)
+            top_ls_ratio = round(float(row.get("longShortRatio", 1.0)), 2)
+    except Exception:
+        pass
+
+    try:
+        r3 = requests.get(
+            f"{base_data_url}/takerlongshortRatio",
+            params={"symbol": usdt_symbol, "period": "1h", "limit": 1},
+            headers=_HEADERS,
+            timeout=6,
+        )
+        if r3.ok and r3.json():
+            taker_buy_sell_ratio = round(float(r3.json()[0].get("buySellRatio", 1.0)), 2)
+    except Exception:
+        pass
+
+    oi_total = float(open_interest_usdt or 0.0)
+    oi_long_usdt = round(oi_total * (top_long_pct / 100.0), 0)
+    oi_short_usdt = round(oi_total * (top_short_pct / 100.0), 0)
+
+    # 레버리지별 유지증거금(MMR) 반영 예상 청산 변동폭(%) 및 추정 비중
+    tiers_cfg = [
+        {"leverage": 100, "move_pct": 0.6, "weight": 0.08, "tag": "초단타 스캘핑 구간"},
+        {"leverage": 50, "move_pct": 1.5, "weight": 0.14, "tag": "고배율 단기 변동 구간"},
+        {"leverage": 25, "move_pct": 3.5, "weight": 0.22, "tag": "핵심 청산 유동성 구간"},
+        {"leverage": 20, "move_pct": 4.4, "weight": 0.24, "tag": "주요 스윙 청산 구간"},
+        {"leverage": 10, "move_pct": 9.2, "weight": 0.20, "tag": "중기 추세 분기점"},
+        {"leverage": 5, "move_pct": 19.0, "weight": 0.12, "tag": "대규모 연쇄 청산 마지노선"},
+    ]
+
+    short_squeeze_levels = []
+    long_squeeze_levels = []
+    cum_short_usdt = 0.0
+    cum_long_usdt = 0.0
+
+    for cfg in tiers_cfg:
+        mv = cfg["move_pct"]
+        wt = cfg["weight"]
+        short_liq_price = round(mark_price * (1.0 + mv / 100.0), price_dec)
+        long_liq_price = round(mark_price * (1.0 - mv / 100.0), price_dec)
+        est_short_usdt = round(oi_short_usdt * wt, 0)
+        est_long_usdt = round(oi_long_usdt * wt, 0)
+        cum_short_usdt += est_short_usdt
+        cum_long_usdt += est_long_usdt
+
+        short_squeeze_levels.append(
+            {
+                "leverage": f"{cfg['leverage']}x",
+                "move_pct": round(mv, 1),
+                "liq_price": short_liq_price,
+                "est_liq_usdt": est_short_usdt,
+                "cum_liq_usdt": round(cum_short_usdt, 0),
+                "tag": cfg["tag"],
+            }
+        )
+        long_squeeze_levels.append(
+            {
+                "leverage": f"{cfg['leverage']}x",
+                "move_pct": round(-mv, 1),
+                "liq_price": long_liq_price,
+                "est_liq_usdt": est_long_usdt,
+                "cum_liq_usdt": round(cum_long_usdt, 0),
+                "tag": cfg["tag"],
+            }
+        )
+
+    if top_long_pct >= 58.0 or global_long_pct >= 65.0:
+        squeeze_diagnosis = "하방 롱 청산 압력 우위 (롱 포지션 쏠림 → 하락 시 연쇄 롱 스퀴즈 주의)"
+        dominant_side = "long_heavy"
+    elif top_short_pct >= 58.0 or global_short_pct >= 65.0:
+        squeeze_diagnosis = "상방 숏 청산 압력 우위 (숏 포지션 쏠림 → 반등 시 숏 스퀴즈 급등 가능)"
+        dominant_side = "short_heavy"
+    else:
+        squeeze_diagnosis = "양방향 균형 구간 (20x~50x 고배율 매물대 중심 단기 변동성 유의)"
+        dominant_side = "balanced"
+
+    return {
+        "available": True,
+        "mark_price": mark_price,
+        "global_long_pct": global_long_pct,
+        "global_short_pct": global_short_pct,
+        "global_ls_ratio": global_ls_ratio,
+        "top_long_pct": top_long_pct,
+        "top_short_pct": top_short_pct,
+        "top_ls_ratio": top_ls_ratio,
+        "taker_buy_sell_ratio": taker_buy_sell_ratio,
+        "oi_long_usdt": oi_long_usdt,
+        "oi_short_usdt": oi_short_usdt,
+        "dominant_side": dominant_side,
+        "squeeze_diagnosis": squeeze_diagnosis,
+        "short_squeeze_levels": short_squeeze_levels,
+        "long_squeeze_levels": long_squeeze_levels,
+    }
+
+
 def collect_coin_data(query: str) -> dict[str, Any]:
-    """코인 종합 데이터 수집: 바이낸스 현물(Spot) + 선물(Futures & 펀딩비) + 김프 + 공포탐욕 + 차트 + 뉴스."""
+    """코인 종합 데이터 수집: 바이낸스 현물(Spot) + 선물(Futures & 펀딩비) + 롱숏 청산 로드맵 + 김프 + 공포탐욕 + 차트 + 뉴스."""
     info = resolve_coin_market(query)
     usdt_symbol = info["usdt_symbol"]
     symbol = info["symbol"]
 
     spot = fetch_binance_spot(usdt_symbol)
     futures = fetch_binance_futures(usdt_symbol, spot_price=spot["price"])
+    liquidation_roadmap = (
+        fetch_liquidation_roadmap(
+            usdt_symbol,
+            mark_price=futures.get("mark_price", 0),
+            open_interest_usdt=futures.get("open_interest_usdt", 0),
+            price_dec=spot["price_dec"],
+        )
+        if futures.get("available")
+        else {"available": False, "reason": futures.get("reason", "선물 미지원")}
+    )
     kimchi = fetch_kimchi_premium(symbol, binance_usdt_price=spot["price"])
     fear_greed = fetch_fear_and_greed()
     tv_chart = fetch_coin_chart_with_indicators(usdt_symbol, timeframe="day", market_type="spot")
@@ -592,6 +742,7 @@ def collect_coin_data(query: str) -> dict[str, Any]:
         "coin_info": info,
         "spot": spot,
         "futures": futures,
+        "liquidation_roadmap": liquidation_roadmap,
         "kimchi": kimchi,
         "fut_spot_vol_ratio": fut_spot_vol_ratio,
         "fear_greed": fear_greed,

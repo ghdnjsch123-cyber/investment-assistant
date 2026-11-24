@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=16" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=17" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -454,6 +454,30 @@
           <div id="t4BeginnerCards" class="t1-beginner-grid"></div>
         </div>
 
+        <!-- 롱/숏 청산 로드맵 패널 -->
+        <div id="t4LiquidationCard" class="t4-liq-card hidden">
+          <div class="t4-liq-header">
+            <div>
+              <h4 class="t4-liq-title">🎯 롱/숏 청산 로드맵 (레버리지별 예상 스퀴즈 구간)</h4>
+              <p id="t4LiqSub" class="t4-liq-sub">바이낸스 실시간 마크가격·미결제약정·상위 트레이더 롱/숏 비율 기반 추정치</p>
+            </div>
+            <span id="t4LiqDiagnosisBadge" class="t4-liq-diag-badge">-</span>
+          </div>
+
+          <div id="t4LiqRatioBarWrap" class="t4-liq-ratio-wrap"></div>
+
+          <div class="t4-liq-grid">
+            <div class="t4-liq-col short-col">
+              <div class="t4-liq-col-head">🔥 상방 숏 청산 구간 (상승 시 숏 스퀴즈)</div>
+              <div id="t4ShortLiqList" class="t4-liq-list"></div>
+            </div>
+            <div class="t4-liq-col long-col">
+              <div class="t4-liq-col-head">💧 하방 롱 청산 구간 (하락 시 롱 연쇄청산)</div>
+              <div id="t4LongLiqList" class="t4-liq-list"></div>
+            </div>
+          </div>
+        </div>
+
         <div id="t4ReportBody" class="report-body"></div>
       </div>
 
@@ -482,6 +506,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=16"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=17"></script>
 </body>
 </html>
