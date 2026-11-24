@@ -433,6 +433,165 @@ def fetch_btc_dominance() -> dict[str, Any]:
         return _GLOBAL_CACHE["data"] or {"available": False}
 
 
+_MACRO_CACHE: dict[str, Any] = {"ts": 0.0, "data": {}}
+
+
+def _macro_event_guide(title: str) -> tuple[str, str]:
+    """미국 주요 경제지표 영문명을 한글명 + 코인 영향 가이드로 매핑."""
+    t = title.lower()
+    if "fomc" in t or "federal funds" in t or "powell" in t:
+        return ("FOMC / 연준 금리·발언", "금리 동결·인하 시사 시 코인 급등, 매파적(긴축) 발언 시 급락 주의")
+    if "core pce" in t or "pce price" in t:
+        return ("미국 근원 PCE 물가지수", "연준이 가장 중시하는 물가 지표. 예상치 하회 시 금리인하 기대감으로 코인 호재")
+    if "cpi" in t:
+        return ("미국 소비자물가지수(CPI)", "예상보다 높으면 인플레 우려로 하락 압력, 낮으면 유동성 기대감으로 상승")
+    if "ppi" in t:
+        return ("미국 생산자물가지수(PPI)", "도매 물가 선행지표. 예상치 하회 시 코인 시장에 우호적")
+    if "non-farm" in t or "unemployment rate" in t:
+        return ("미국 비농업 고용·실업률", "고용 과열 시 금리인하 지연 우려, 적정 둔화(골디락스) 시 위험자산 선호")
+    if "unemployment claims" in t:
+        return ("미국 신규 실업수당 청구건수", "청구건수 증가(고용 둔화) 시 금리인하 기대감으로 코인에 단기 우호적")
+    if "gdp" in t:
+        return ("미국 GDP 성장률", "경기 침체 우려 없이 견조하면 위험자산(코인·나스닥) 투자심리 개선")
+    if "retail sales" in t:
+        return ("미국 소매판매", "소비 견조 vs 과열 여부에 따라 달러·국채금리와 함께 코인 변동성 확대")
+    if "ism" in t or "pmi" in t:
+        return ("미국 ISM/PMI 경기지수", "경기 확장/위축 판단 지표. 50 상회 여부와 물가지수 세부항목 주목")
+    return (title, "발표 직후 달러·미 국채금리 변동에 따라 코인 단기 변동성 확대 가능")
+
+
+def fetch_us_macro_and_schedule() -> dict[str, Any]:
+    """미국 주요 경제지표 발표 일정(이번 주 USD High/Medium) + BTC-나스닥/달러/금리 30일 실측 상관관계."""
+    now = time.time()
+    if _MACRO_CACHE["data"] and (now - _MACRO_CACHE["ts"] < 600):
+        return _MACRO_CACHE["data"]
+
+    events: list[dict[str, Any]] = []
+    now_kst = datetime.now(_KST)
+    weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
+
+    try:
+        cal_resp = requests.get(
+            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            headers=_HEADERS,
+            timeout=8,
+        )
+        if cal_resp.ok:
+            raw_cal = cal_resp.json() or []
+            usd_events = [
+                x for x in raw_cal
+                if x.get("country") == "USD" and x.get("impact") in ("High", "Medium")
+            ]
+            # High 우선 정렬 후 날짜순
+            usd_events.sort(key=lambda x: (0 if x.get("impact") == "High" else 1, x.get("date") or ""))
+            for row in usd_events[:8]:
+                raw_date = str(row.get("date") or "")
+                kst_str = raw_date
+                is_upcoming = True
+                sort_ts = 0.0
+                try:
+                    dt = datetime.fromisoformat(raw_date).astimezone(_KST)
+                    wd = weekday_kr[dt.weekday()]
+                    kst_str = dt.strftime(f"%m/%d({wd}) %H:%M")
+                    is_upcoming = dt >= now_kst
+                    sort_ts = dt.timestamp()
+                except Exception:
+                    pass
+                raw_title = str(row.get("title") or "")
+                kr_title, guide = _macro_event_guide(raw_title)
+                events.append(
+                    {
+                        "title": raw_title,
+                        "title_kr": kr_title,
+                        "impact": row.get("impact", "Medium"),
+                        "date_kst": kst_str,
+                        "is_upcoming": is_upcoming,
+                        "forecast": row.get("forecast") or "-",
+                        "previous": row.get("previous") or "-",
+                        "guide": guide,
+                        "sort_ts": sort_ts,
+                    }
+                )
+            events.sort(key=lambda x: (0 if x["is_upcoming"] else 1, x["sort_ts"]))
+    except Exception:
+        pass
+
+    # 30일 BTC vs QQQ(나스닥100), DXY(달러인덱스), ^TNX(미10년물 국채금리) 실측 상관계수
+    corr_data: dict[str, Any] = {
+        "qqq": None,
+        "dxy": None,
+        "us10y": None,
+        "latest": {},
+        "summary": "미국 거시지표 상관관계 계산 중",
+    }
+    try:
+        syms = {"btc": "BTC-USD", "qqq": "QQQ", "dxy": "DX-Y.NYB", "us10y": "^TNX"}
+        series_map: dict[str, pd.Series] = {}
+        latest_map: dict[str, dict[str, Any]] = {}
+
+        for key, y_sym in syms.items():
+            r = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{y_sym}",
+                params={"range": "2mo", "interval": "1d"},
+                headers=_HEADERS,
+                timeout=8,
+            )
+            if not r.ok:
+                continue
+            res = r.json()["chart"]["result"][0]
+            ts_list = res.get("timestamp") or []
+            closes = (res.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
+            pairs = {
+                datetime.fromtimestamp(t, tz=_KST).date(): float(c)
+                for t, c in zip(ts_list, closes)
+                if c is not None
+            }
+            if pairs:
+                s = pd.Series(pairs).sort_index()
+                series_map[key] = s
+                if key != "btc" and len(s) >= 2:
+                    last_v = float(s.iloc[-1])
+                    prev_v = float(s.iloc[-2])
+                    chg_p = round(((last_v - prev_v) / prev_v) * 100.0, 2) if prev_v else 0.0
+                    latest_map[key] = {"value": round(last_v, 2), "change_pct": chg_p}
+
+        if "btc" in series_map and len(series_map) >= 2:
+            df_ret = pd.DataFrame(series_map).dropna().pct_change().dropna().tail(30)
+            if len(df_ret) >= 10:
+                corr_row = df_ret.corr()["btc"]
+                corr_qqq = round(float(corr_row["qqq"]), 2) if "qqq" in corr_row and pd.notna(corr_row["qqq"]) else None
+                corr_dxy = round(float(corr_row["dxy"]), 2) if "dxy" in corr_row and pd.notna(corr_row["dxy"]) else None
+                corr_10y = round(float(corr_row["us10y"]), 2) if "us10y" in corr_row and pd.notna(corr_row["us10y"]) else None
+
+                parts = []
+                if corr_qqq is not None:
+                    q_desc = "강한 동조화" if corr_qqq >= 0.5 else ("완만한 동조화" if corr_qqq >= 0.2 else "독자 흐름")
+                    parts.append(f"나스닥(QQQ)과 {corr_qqq:+.2f} ({q_desc})")
+                if corr_dxy is not None:
+                    d_desc = "역상관(달러 약세 시 상승)" if corr_dxy <= -0.2 else "약한 상관"
+                    parts.append(f"달러(DXY)와 {corr_dxy:+.2f} ({d_desc})")
+                if corr_10y is not None:
+                    y_desc = "금리 민감" if abs(corr_10y) >= 0.3 else "제한적 영향"
+                    parts.append(f"미 10년금리 {corr_10y:+.2f} ({y_desc})")
+
+                corr_data = {
+                    "qqq": corr_qqq,
+                    "dxy": corr_dxy,
+                    "us10y": corr_10y,
+                    "latest": latest_map,
+                    "summary": " · ".join(parts) if parts else "최근 30일 데이터 기준",
+                }
+    except Exception:
+        pass
+
+    result = {
+        "available": bool(events or corr_data["qqq"] is not None),
+        "events": events,
+        "correlation": corr_data,
+    }
+    _MACRO_CACHE["ts"] = now
+    _MACRO_CACHE["data"] = result
+    return result
 _HEATMAP_CACHE: dict[str, Any] = {"ts": 0.0, "items": []}
 _STABLE_SYMBOLS = {"USDT", "USDC", "USDS", "DAI", "FDUSD", "TUSD", "BUSD", "PYUSD", "USDE", "USD1"}
 
@@ -851,6 +1010,7 @@ def collect_coin_data(query: str) -> dict[str, Any]:
     kimchi = fetch_kimchi_premium(symbol, binance_usdt_price=spot["price"])
     fear_greed = fetch_fear_and_greed()
     btc_dominance = fetch_btc_dominance()
+    us_macro = fetch_us_macro_and_schedule()
     tv_chart = fetch_coin_chart_with_indicators(usdt_symbol, timeframe="day", market_type="spot")
     technical = _summarize_technical(tv_chart)
     news = fetch_coin_news(symbol, info["korean_name"])
@@ -869,6 +1029,7 @@ def collect_coin_data(query: str) -> dict[str, Any]:
         "fut_spot_vol_ratio": fut_spot_vol_ratio,
         "fear_greed": fear_greed,
         "btc_dominance": btc_dominance,
+        "us_macro": us_macro,
         "technical": technical,
         "tv_chart": tv_chart,
         "news": news,

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=19" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -546,6 +546,20 @@
           </div>
         </div>
 
+        <!-- 미국 주요 경제지표 발표 일정 & 코인 상관관계 패널 -->
+        <div id="t4UsMacroCard" class="t4-macro-card hidden">
+          <div class="t4-liq-header">
+            <div>
+              <h4 class="t4-liq-title">🇺🇸 미국 주요 경제지표 일정 &amp; 코인 상관관계</h4>
+              <p id="t4MacroSummary" class="t4-liq-sub">최근 30일 BTC vs 나스닥·달러·미 10년물 국채금리 실측 상관계수 및 이번 주 발표 일정(KST)</p>
+            </div>
+            <span class="t4-panel-badge dom">거시경제 연동</span>
+          </div>
+
+          <div id="t4MacroCorrGrid" class="t4-macro-corr-grid"></div>
+          <div id="t4MacroEventsList" class="t4-macro-events"></div>
+        </div>
+
         <div id="t4ReportBody" class="report-body"></div>
       </div>
 
@@ -574,6 +588,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=19"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20"></script>
 </body>
 </html>

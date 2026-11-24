@@ -1854,6 +1854,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t4ContextBar.classList.add("hidden");
     t4SummaryCard.classList.add("hidden");
     document.getElementById("t4LiquidationCard")?.classList.add("hidden");
+    document.getElementById("t4UsMacroCard")?.classList.add("hidden");
     t4ErrorBox.classList.add("hidden");
     t4AutocompleteList.classList.add("hidden");
   }
@@ -2354,6 +2355,80 @@ document.addEventListener("DOMContentLoaded", () => {
       liqCard.classList.add("hidden");
     }
 
+    // 4) 미국 주요 경제지표 발표 일정 & 코인 상관관계 렌더링
+    const macroCard = document.getElementById("t4UsMacroCard");
+    const macro = coinData.us_macro;
+    if (macroCard && macro && macro.available) {
+      const corr = macro.correlation || {};
+      const latest = corr.latest || {};
+      document.getElementById("t4MacroSummary").textContent =
+        `30일 BTC 실측 상관관계: ${corr.summary || "-"}`;
+
+      const corrItems = [
+        {
+          label: "나스닥 100 (QQQ)",
+          val: corr.qqq,
+          sub: latest.qqq ? `$${latest.qqq.value} (${latest.qqq.change_pct > 0 ? "+" : ""}${latest.qqq.change_pct}%)` : "-",
+          hint: corr.qqq >= 0.4 ? "나스닥과 함께 움직이는 동조화 강함" : "나스닥 영향 제한적",
+        },
+        {
+          label: "미국 달러인덱스 (DXY)",
+          val: corr.dxy,
+          sub: latest.dxy ? `${latest.dxy.value} (${latest.dxy.change_pct > 0 ? "+" : ""}${latest.dxy.change_pct}%)` : "-",
+          hint: corr.dxy <= -0.2 ? "달러 약세 시 코인 상승 경향" : "달러와 혼조 흐름",
+        },
+        {
+          label: "미 10년물 국채금리",
+          val: corr.us10y,
+          sub: latest.us10y ? `${latest.us10y.value}% (${latest.us10y.change_pct > 0 ? "+" : ""}${latest.us10y.change_pct}%)` : "-",
+          hint: Math.abs(corr.us10y || 0) >= 0.3 ? "금리 변동에 민감하게 반응" : "금리 단기 영향 제한적",
+        },
+      ];
+
+      document.getElementById("t4MacroCorrGrid").innerHTML = corrItems
+        .map((c) => {
+          const vStr = c.val !== null && c.val !== undefined ? `${c.val > 0 ? "+" : ""}${c.val.toFixed(2)}` : "-";
+          const vCls = c.val >= 0.25 ? "pos" : c.val <= -0.25 ? "neg" : "neu";
+          return `
+            <div class="t4-corr-box">
+              <div class="t4-corr-head"><span>${c.label}</span><span>${c.sub}</span></div>
+              <div class="t4-corr-val ${vCls}">${vStr}</div>
+              <div class="t4-corr-hint">${c.hint}</div>
+            </div>
+          `;
+        })
+        .join("");
+
+      const evList = macro.events || [];
+      const evContainer = document.getElementById("t4MacroEventsList");
+      if (evList.length) {
+        evContainer.innerHTML = evList
+          .map((ev) => `
+            <div class="t4-macro-ev-row">
+              <div class="t4-ev-time">
+                ${ev.date_kst}
+                <span class="t4-ev-status ${ev.is_upcoming ? "upcoming" : "done"}">${ev.is_upcoming ? "예정" : "발표"}</span>
+              </div>
+              <div class="t4-ev-main">
+                <strong>${ev.title_kr}</strong>
+                <span class="t4-ev-impact ${ev.impact}">${ev.impact === "High" ? "핵심" : "중요"}</span>
+                <div class="t4-ev-guide">${ev.guide}</div>
+              </div>
+              <div class="t4-ev-nums">
+                <div>예상 <strong>${ev.forecast}</strong></div>
+                <div>이전 ${ev.previous}</div>
+              </div>
+            </div>
+          `)
+          .join("");
+      } else {
+        evContainer.innerHTML = `<div class="t4-ev-guide">이번 주 예정된 주요 미국 거시지표 일정이 없습니다.</div>`;
+      }
+      macroCard.classList.remove("hidden");
+    } else if (macroCard) {
+      macroCard.classList.add("hidden");
+    }
+
     if (coinData.tv_chart) {
       t4CurrentMeta = { market: info.usdt_symbol, name: info.korean_name || info.symbol };
       t4CurrentChartData = coinData.tv_chart;
@@ -2389,6 +2464,7 @@ document.addEventListener("DOMContentLoaded", () => {
         t4ContextBar.classList.add("hidden");
         t4SummaryCard.classList.add("hidden");
     document.getElementById("t4LiquidationCard")?.classList.add("hidden");
+    document.getElementById("t4UsMacroCard")?.classList.add("hidden");
       }
     }
 

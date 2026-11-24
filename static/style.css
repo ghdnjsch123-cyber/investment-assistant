@@ -1995,3 +1995,130 @@ body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
 }
+
+
+/* === Tab 4: US Macro Schedule & Correlation === */
+.t4-macro-card {
+  margin-top: 14px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.t4-macro-corr-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .t4-macro-corr-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.t4-corr-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.t4-corr-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.t4-corr-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 4px 0 2px;
+}
+
+.t4-corr-val.pos { color: #16a34a; }
+.t4-corr-val.neg { color: #dc2626; }
+.t4-corr-val.neu { color: #475569; }
+
+.t4-corr-hint {
+  font-size: 0.73rem;
+  color: #64748b;
+}
+
+.t4-macro-events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.t4-macro-ev-row {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 9px 12px;
+  display: grid;
+  grid-template-columns: 112px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 680px) {
+  .t4-macro-ev-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+.t4-ev-time {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.t4-ev-status {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+
+.t4-ev-status.upcoming { background: #dbeafe; color: #1d4ed8; }
+.t4-ev-status.done { background: #f1f5f9; color: #64748b; }
+
+.t4-ev-main strong {
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.t4-ev-guide {
+  font-size: 0.74rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.t4-ev-nums {
+  text-align: right;
+  font-size: 0.76rem;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.t4-ev-impact {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+
+.t4-ev-impact.High { background: #fee2e2; color: #b91c1c; }
+.t4-ev-impact.Medium { background: #fef3c7; color: #b45309; }
