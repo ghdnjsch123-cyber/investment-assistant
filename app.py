@@ -133,9 +133,12 @@ def chat_analysis():
             err_msg = stock_data["errors"][0]["message"] if stock_data.get("errors") else "종목 기본 정보를 가져오지 못했습니다."
             return jsonify({"error": err_msg}), 400
 
-        # 탭 1에서도 기술지표(RSI, MACD, 이동평균선, 볼린저밴드 위치%) 함께 계산
+        # 탭 1에서도 기술지표(RSI, MACD, 이동평균선, 볼린저밴드 위치%) 및 최근 60일 차트 데이터 함께 계산
+        tech_series = {}
         try:
-            tech_latest = calculate_technical_indicators(code, days=365, display_days=5).get("latest", {})
+            tech_calc = calculate_technical_indicators(code, days=365, display_days=60)
+            tech_latest = tech_calc.get("latest", {})
+            tech_series = tech_calc.get("series", {})
             bb_up = tech_latest.get("bb_upper")
             bb_lo = tech_latest.get("bb_lower")
             close_p = tech_latest.get("close")
@@ -148,6 +151,7 @@ def chat_analysis():
             stock_data["technical"] = {}
 
         stock_json = json.dumps(stock_data, ensure_ascii=False)
+        stock_data["tech_series"] = tech_series
         stock_name = stock_data.get("name", "")
         asset_type = stock_data.get("asset_type", "stock")
 

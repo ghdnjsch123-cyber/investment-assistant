@@ -313,6 +313,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1SummaryCard = document.getElementById("t1SummaryCard");
   const t1TechStrip = document.getElementById("t1TechStrip");
+  const t1ChartsGrid = document.getElementById("t1ChartsGrid");
   const t1ReportBody = document.getElementById("t1ReportBody");
   const t1ErrorBox = document.getElementById("t1ErrorBox");
   const t1ChatMessages = document.getElementById("t1ChatMessages");
@@ -324,6 +325,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let t1ConversationId = "";
   let t1LastCode = "";
+  let t1PriceChartInst = null;
+  let t1SecondChartInst = null;
 
   function resetTab1Chat(
     notice = "위에서 종목을 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
@@ -337,6 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t1ContextBar.classList.add("hidden");
     t1SummaryCard.classList.add("hidden");
     t1TechStrip.classList.add("hidden");
+    t1ChartsGrid.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
   }
 
@@ -509,6 +513,92 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       t1TechStrip.classList.add("hidden");
     }
+
+    renderTab1Charts(stockData);
+  }
+
+  function renderTab1Charts(stockData) {
+    const s = stockData.tech_series || {};
+    const hasPriceSeries = Array.isArray(s.dates) && s.dates.length > 0;
+    const isEtf = stockData.asset_type === "etf";
+
+    if (!hasPriceSeries) {
+      t1ChartsGrid.classList.add("hidden");
+      return;
+    }
+
+    // 1) 좌측 차트: 최근 60일 주가 · MA20 · MA60 · 볼린저밴드
+    if (t1PriceChartInst) t1PriceChartInst.destroy();
+    t1PriceChartInst = new Chart(document.getElementById("t1PriceChart"), {
+      type: "line",
+      data: {
+        labels: s.dates,
+        datasets: [
+          { label: "종가", data: s.close, borderColor: "#0f172a", borderWidth: 2, pointRadius: 0 },
+          { label: "20일선", data: s.ma20, borderColor: "#2563eb", borderWidth: 1.5, pointRadius: 0 },
+          { label: "60일선", data: s.ma60, borderColor: "#10b981", borderWidth: 1.5, pointRadius: 0 },
+          { label: "볼린저 상단", data: s.bb_upper, borderColor: "#94a3b8", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+          { label: "볼린저 하단", data: s.bb_lower, borderColor: "#94a3b8", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { x: { ticks: { maxTicksLimit: 6 } } },
+      },
+    });
+
+    // 2) 우측 차트: 일반 주식은 연간 매출/영업이익, ETF는 기간별 수익률
+    if (t1SecondChartInst) t1SecondChartInst.destroy();
+    const secondTitleEl = document.getElementById("t1SecondChartTitle");
+
+    if (isEtf) {
+      const etf = (stockData.snapshot || {}).etf_info || {};
+      secondTitleEl.textContent = "📊 기간별 수익률 비교 (%)";
+      const labels = ["1개월", "3개월", "6개월", "1년"];
+      const vals = [etf.return_1m ?? 0, etf.return_3m ?? 0, etf.return_6m ?? 0, etf.return_1y ?? 0];
+      const colors = vals.map((v) => (v >= 0 ? "rgba(220, 38, 38, 0.78)" : "rgba(37, 99, 235, 0.78)"));
+      t1SecondChartInst = new Chart(document.getElementById("t1SecondChart"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "수익률 (%)", data: vals, backgroundColor: colors, borderRadius: 6 }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { ticks: { callback: (v) => `${v}%` } } },
+        },
+      });
+    } else {
+      secondTitleEl.textContent = "📊 연간 매출액 · 영업이익 추이 (억원, *추정 포함)";
+      const fins = (stockData.financials || []).slice(-6);
+      const labels = fins.map((f) => (f.is_consensus ? `${f.period}(E)` : f.period));
+      const revenues = fins.map((f) => f.revenue ?? null);
+      const opIncomes = fins.map((f) => f.operating_income ?? null);
+      const revColors = fins.map((f) => (f.is_consensus ? "rgba(245, 158, 11, 0.7)" : "rgba(37, 99, 235, 0.8)"));
+      const opColors = fins.map((f) => (f.is_consensus ? "rgba(251, 191, 36, 0.85)" : "rgba(16, 185, 129, 0.85)"));
+
+      t1SecondChartInst = new Chart(document.getElementById("t1SecondChart"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "매출액", data: revenues, backgroundColor: revColors, borderRadius: 4 },
+            { label: "영업이익", data: opIncomes, backgroundColor: opColors, borderRadius: 4 },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
+        },
+      });
+    }
+
+    t1ChartsGrid.classList.remove("hidden");
   }
 
   async function sendTab1Request(code, question = "", isInitial = false) {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=7" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -86,6 +86,22 @@
           </div>
           <div id="t1BeginnerCards" class="t1-beginner-grid"></div>
           <div id="t1TechStrip" class="t1-tech-strip hidden"></div>
+        </div>
+
+        <!-- 탭 1 심층분석용 차트 2종 (최근 60일 주가·볼린저 + 연간 실적/수익률 추이) -->
+        <div id="t1ChartsGrid" class="two-col-grid t1-charts-grid hidden">
+          <div class="mini-chart-card">
+            <h4 class="mini-chart-title">📈 최근 60일 주가 · 이동평균 · 볼린저밴드</h4>
+            <div class="chart-container small">
+              <canvas id="t1PriceChart"></canvas>
+            </div>
+          </div>
+          <div class="mini-chart-card">
+            <h4 id="t1SecondChartTitle" class="mini-chart-title">📊 연간 매출액 · 영업이익 추이 (억원)</h4>
+            <div class="chart-container small">
+              <canvas id="t1SecondChart"></canvas>
+            </div>
+          </div>
         </div>
 
         <!-- AI 애널리스트 리포트 본문 -->
@@ -256,6 +272,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=7"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=8"></script>
 </body>
 </html>
