@@ -97,12 +97,16 @@ def fetch_basic_info(code: str) -> dict:
     current_price = clean_number(data.get("closePrice"), is_float=False)
     change_rate = clean_number(data.get("fluctuationsRatio"), is_float=True)
     change_price = clean_number(data.get("compareToPreviousClosePrice"), is_float=False)
+    asset_type = "etf" if data.get("stockEndType") == "etf" else "stock"
+    market_name = (data.get("stockExchangeType") or {}).get("nameKor", "")
 
-    logger.info("[PARSE] 기본 시세 추출 완료 (name=%s, current_price=%s)", stock_name, current_price)
+    logger.info("[PARSE] 기본 시세 추출 완료 (name=%s, type=%s, current_price=%s)", stock_name, asset_type, current_price)
 
     return {
         "code": code,
         "name": stock_name,
+        "asset_type": asset_type,
+        "market": market_name,
         "snapshot": {
             "current_price": current_price,
             "change_rate": change_rate,
@@ -140,12 +144,27 @@ def fetch_integration_info(code: str) -> dict:
         if item.get("code")
     }
     consensus = data.get("consensusInfo") or {}
+    etf_ind = data.get("etfKeyIndicator") or {}
+    is_etf = data.get("stockEndType") == "etf" or bool(etf_ind)
+
+    high52 = clean_number(
+        total_map.get("highPriceOf52WeeksAdjusted") or total_map.get("highPriceOf52Weeks"),
+        is_float=False,
+    )
+    low52 = clean_number(
+        total_map.get("lowPriceOf52WeeksAdjusted") or total_map.get("lowPriceOf52Weeks"),
+        is_float=False,
+    )
 
     metrics = {
-        "market_cap": parse_korean_market_cap(total_map.get("marketValue")),
-        "high52": clean_number(total_map.get("highPriceOf52Weeks"), is_float=False),
-        "low52": clean_number(total_map.get("lowPriceOf52Weeks"), is_float=False),
+        "market_cap": parse_korean_market_cap(total_map.get("marketValue") or etf_ind.get("marketValue")),
+        "high52": high52,
+        "low52": low52,
         "volume": clean_number(total_map.get("accumulatedTradingVolume"), is_float=False),
+        "trading_value": total_map.get("accumulatedTradingValue"),
+        "open_price": clean_number(total_map.get("openPrice"), is_float=False),
+        "high_price": clean_number(total_map.get("highPrice"), is_float=False),
+        "low_price": clean_number(total_map.get("lowPrice"), is_float=False),
         "foreign_rate": clean_number(total_map.get("foreignRate"), is_float=True),
         "per": clean_number(total_map.get("per"), is_float=True),
         "eps": clean_number(total_map.get("eps"), is_float=False),
@@ -153,12 +172,47 @@ def fetch_integration_info(code: str) -> dict:
         "forward_eps": clean_number(total_map.get("cnsEps"), is_float=False),
         "pbr": clean_number(total_map.get("pbr"), is_float=True),
         "bps": clean_number(total_map.get("bps"), is_float=False),
-        "dividend_yield": clean_number(total_map.get("dividendYieldRatio"), is_float=True),
+        "dividend_yield": clean_number(
+            total_map.get("dividendYieldRatio") or etf_ind.get("dividendYieldTtm"),
+            is_float=True,
+        ),
         "target_price": clean_number(consensus.get("priceTargetMean"), is_float=False),
     }
 
+    # 최근 수급 (외국인 / 기관 / 개인 순매수)
+    deal_trends = data.get("dealTrendInfos") or []
+    if deal_trends:
+        latest_deal = deal_trends[0]
+        metrics["investor_trend"] = {
+            "date": latest_deal.get("bizdate", ""),
+            "foreigner": clean_number(latest_deal.get("foreignerPureBuyQuant"), is_float=False),
+            "organ": clean_number(latest_deal.get("organPureBuyQuant"), is_float=False),
+            "individual": clean_number(latest_deal.get("individualPureBuyQuant"), is_float=False),
+        }
+
+    # ETF 전용 핵심 지표 (KODEX 200 등)
+    if is_etf:
+        dev_sign = etf_ind.get("deviationSign", "")
+        dev_val = clean_number(etf_ind.get("deviationRate"), is_float=True)
+        if dev_val is not None and dev_sign == "-" and dev_val > 0:
+            dev_val = -dev_val
+
+        metrics["etf_info"] = {
+            "base_index": total_map.get("etfBaseIdx") or "-",
+            "issuer": etf_ind.get("issuerName") or total_map.get("issueName") or "-",
+            "nav": clean_number(total_map.get("nav") or etf_ind.get("nav"), is_float=True),
+            "total_nav": etf_ind.get("totalNav") or "-",
+            "deviation_rate": dev_val,
+            "total_fee": clean_number(etf_ind.get("totalFee") or total_map.get("fundPay"), is_float=True),
+            "return_1m": clean_number(etf_ind.get("returnRate1m") or total_map.get("oneMonthEarnRate"), is_float=True),
+            "return_3m": clean_number(etf_ind.get("returnRate3m") or total_map.get("threeMonthEarnRate"), is_float=True),
+            "return_6m": clean_number(total_map.get("sixMonthEarnRate"), is_float=True),
+            "return_1y": clean_number(etf_ind.get("returnRate1y") or total_map.get("oneYearEarnRate"), is_float=True),
+        }
+
     logger.info(
-        "[PARSE] 투자지표 추출 완료 (per=%s, pbr=%s, target_price=%s)",
+        "[PARSE] 투자지표 추출 완료 (is_etf=%s, per=%s, pbr=%s, target_price=%s)",
+        is_etf,
         metrics["per"],
         metrics["pbr"],
         metrics["target_price"],
@@ -333,6 +387,8 @@ def collect_stock_data(code: str) -> dict:
     result = {
         "code": code,
         "name": None,
+        "asset_type": "stock",
+        "market": "",
         "snapshot": {},
         "financials": [],
         "news": [],
@@ -343,26 +399,36 @@ def collect_stock_data(code: str) -> dict:
     try:
         basic = fetch_basic_info(code)
         result["name"] = basic["name"]
+        result["asset_type"] = basic.get("asset_type", "stock")
+        result["market"] = basic.get("market", "")
         result["snapshot"].update(basic["snapshot"])
     except Exception as e:
         logger.error("[ERROR] 기본 시세 수집 실패: %s", e, exc_info=True)
         result["errors"].append({"area": "basic", "message": str(e)})
         return result
 
-    # 2. 투자정보 및 밸류에이션 (부분 실패 허용)
+    # 2. 투자정보 및 밸류에이션 / ETF 지표 (부분 실패 허용)
     try:
         integration = fetch_integration_info(code)
         result["snapshot"].update(integration)
+        # 52주 최저~최고 대비 현재가 위치(%) 계산
+        cur = result["snapshot"].get("current_price")
+        hi = result["snapshot"].get("high52")
+        lo = result["snapshot"].get("low52")
+        if cur is not None and hi is not None and lo is not None and hi > lo:
+            pos = ((cur - lo) / (hi - lo)) * 100.0
+            result["snapshot"]["position_52w"] = round(max(0.0, min(100.0, pos)), 1)
     except Exception as e:
         logger.error("[ERROR] 투자정보 수집 실패: %s", e, exc_info=True)
         result["errors"].append({"area": "integration", "message": str(e)})
 
-    # 3. 와이즈리포트 기업실적분석 (부분 실패 허용)
-    try:
-        result["financials"] = fetch_financials(code)
-    except Exception as e:
-        logger.error("[ERROR] 기업실적분석 수집 실패: %s", e, exc_info=True)
-        result["errors"].append({"area": "financials", "message": str(e)})
+    # 3. 와이즈리포트 기업실적분석 (ETF가 아닌 일반 주식일 때만 조회)
+    if result["asset_type"] != "etf":
+        try:
+            result["financials"] = fetch_financials(code)
+        except Exception as e:
+            logger.error("[ERROR] 기업실적분석 수집 실패: %s", e, exc_info=True)
+            result["errors"].append({"area": "financials", "message": str(e)})
 
     # 4. 공식 종목명 기반 Serper 뉴스 검색 (부분 실패 허용)
     try:

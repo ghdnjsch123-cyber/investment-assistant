@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -47,16 +47,46 @@
             <button type="button" class="chip-btn t1-chip" data-code="000660">000660 SK하이닉스</button>
             <button type="button" class="chip-btn t1-chip" data-code="005930">005930 삼성전자</button>
             <button type="button" class="chip-btn t1-chip" data-code="035420">035420 NAVER</button>
+            <button type="button" class="chip-btn t1-chip etf-chip" data-code="069500">069500 KODEX 200 (ETF)</button>
           </div>
         </form>
 
         <div id="t1ContextBar" class="context-bar hidden"></div>
+
+        <!-- 초보자용 한눈에 보는 숫자 번역 카드 -->
+        <div id="t1SummaryCard" class="t1-summary-card hidden">
+          <div class="t1-summary-top">
+            <div class="t1-title-group">
+              <span id="t1AssetBadge" class="asset-badge stock">주식</span>
+              <strong id="t1SummaryName">-</strong>
+              <span id="t1SummaryPrice" class="t1-summary-price">-</span>
+              <span id="t1SummaryChange" class="t1-summary-change">-</span>
+            </div>
+            <div class="t1-range-group">
+              <span id="t1RangeLabel" class="t1-range-label">52주 위치: -</span>
+              <div class="range-bar-bg">
+                <div id="t1RangeFill" class="range-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+          <div id="t1BeginnerCards" class="t1-beginner-grid"></div>
+        </div>
+
         <div id="t1ErrorBox" class="status-box error hidden"></div>
 
         <div id="t1ChatMessages" class="chat-box">
           <div class="chat-msg bot">
-            <div class="chat-bubble">안녕하세요! 위 종목 버튼을 누르거나 6자리 코드를 입력해 '종목 분석 시작'을 누르면, 애널리스트 수준의 심층 분석을 먼저 진행하고 이어서 후속 질문에 답해 드립니다.</div>
+            <div class="chat-bubble">안녕하세요! 위 종목(또는 ETF) 버튼을 누르거나 6자리 코드를 입력해 '종목 분석 시작'을 누르면, 초보자도 한눈에 이해할 수 있는 핵심 지표 요약과 애널리스트 심층 리포트를 보여드립니다.</div>
           </div>
+        </div>
+
+        <!-- 초보자용 원클릭 후속 질문 버튼 -->
+        <div class="quick-questions">
+          <span class="qq-label">초보자 추천 질문:</span>
+          <button type="button" class="qq-btn" data-q="이 종목(또는 ETF)이 망하거나 크게 손실 날 가장 큰 위험은 뭔가요? 쉽게 설명해 주세요.">망할 위험은 없나요?</button>
+          <button type="button" class="qq-btn" data-q="지금 가격 위치와 밸류에이션(또는 괴리율)을 볼 때 초보자가 들어가도 괜찮은 타이밍인가요?">지금 들어가도 될까요?</button>
+          <button type="button" class="qq-btn" data-q="배당금(또는 분배금)은 얼마나 나오고 주주환원 매력은 어떤가요?">배당/분배금 매력은?</button>
+          <button type="button" class="qq-btn" data-q="최근 뉴스 5건 중에서 주가에 가장 큰 영향을 줄 핵심 호재와 악재 1가지씩만 꼽아주세요.">뉴스 핵심 호재/악재</button>
         </div>
 
         <form id="t1ChatForm" class="chat-input-form">
@@ -206,6 +236,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=6"></script>
 </body>
 </html>

@@ -849,3 +849,163 @@ body {
   color: #475569;
   border: 1px solid #cbd5e1;
 }
+
+/* 탭 1 초보자 요약 카드 & 추천 질문 */
+.etf-chip {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  color: #5b21b6;
+}
+
+.etf-chip:hover {
+  background: #ede9fe;
+}
+
+.t1-summary-card {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.t1-summary-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.t1-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asset-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.asset-badge.stock {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.asset-badge.etf {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.t1-summary-price {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.t1-summary-change {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.t1-summary-change.up { color: var(--up-color); }
+.t1-summary-change.down { color: var(--down-color); }
+.t1-summary-change.flat { color: var(--flat-color); }
+
+.t1-range-group {
+  min-width: 220px;
+}
+
+.t1-range-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.range-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.range-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.t1-beginner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+  gap: 10px;
+}
+
+.beginner-item {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.beginner-title {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.beginner-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 3px;
+}
+
+.beginner-hint {
+  font-size: 0.78rem;
+  color: #334155;
+  line-height: 1.35;
+}
+
+.quick-questions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.qq-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.qq-btn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.qq-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.qq-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

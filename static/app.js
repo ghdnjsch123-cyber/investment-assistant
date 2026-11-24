@@ -249,6 +249,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const applyInline = (line) =>
       line
         .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*([^*\n]+)\*/g, "$1")
+        .replace(/`([^`\n]+)`/g, "$1")
         .replace(/\[매수\s*우위\]/g, '<span class="stance-badge buy">매수 우위</span>')
         .replace(/\[매도(?:\(관망\))?\s*우위\]/g, '<span class="stance-badge sell">매도(관망) 우위</span>')
         .replace(/\[중립\]/g, '<span class="stance-badge neutral">중립</span>');
@@ -306,12 +308,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1CodeInput = document.getElementById("t1CodeInput");
   const t1AnalyzeBtn = document.getElementById("t1AnalyzeBtn");
   const t1ContextBar = document.getElementById("t1ContextBar");
+  const t1SummaryCard = document.getElementById("t1SummaryCard");
   const t1ErrorBox = document.getElementById("t1ErrorBox");
   const t1ChatMessages = document.getElementById("t1ChatMessages");
   const t1ChatForm = document.getElementById("t1ChatForm");
   const t1QuestionInput = document.getElementById("t1QuestionInput");
   const t1SendBtn = document.getElementById("t1SendBtn");
   const t1ResetBtn = document.getElementById("t1ResetBtn");
+  const qqBtns = document.querySelectorAll(".qq-btn");
 
   let t1ConversationId = "";
   let t1LastCode = "";
@@ -324,6 +328,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t1ChatMessages.innerHTML = "";
     appendChatBubble(t1ChatMessages, "bot", notice);
     t1ContextBar.classList.add("hidden");
+    t1SummaryCard.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
   }
 
@@ -332,6 +337,147 @@ document.addEventListener("DOMContentLoaded", () => {
     t1SendBtn.disabled = isBusy;
     t1QuestionInput.disabled = isBusy;
     t1CodeInput.disabled = isBusy;
+    qqBtns.forEach((b) => {
+      b.disabled = isBusy;
+    });
+  }
+
+  function renderTab1Summary(stockData) {
+    const snap = stockData.snapshot || {};
+    const isEtf = stockData.asset_type === "etf";
+    const badgeEl = document.getElementById("t1AssetBadge");
+    badgeEl.textContent = isEtf ? "ETF" : "주식";
+    badgeEl.className = `asset-badge ${isEtf ? "etf" : "stock"}`;
+
+    document.getElementById("t1SummaryName").textContent = `${stockData.name} (${stockData.code})`;
+    document.getElementById("t1SummaryPrice").textContent = formatNumber(snap.current_price, "원");
+
+    const changeEl = document.getElementById("t1SummaryChange");
+    const rate = snap.change_rate;
+    if (rate !== null && rate !== undefined) {
+      const sign = rate > 0 ? "▲" : rate < 0 ? "▼" : "";
+      const plus = rate > 0 ? "+" : "";
+      changeEl.textContent = `${sign} ${plus}${rate}%`;
+      changeEl.className = `t1-summary-change ${rate > 0 ? "up" : rate < 0 ? "down" : "flat"}`;
+    } else {
+      changeEl.textContent = "-";
+      changeEl.className = "t1-summary-change flat";
+    }
+
+    const pos = snap.position_52w;
+    if (pos !== null && pos !== undefined) {
+      document.getElementById("t1RangeLabel").textContent =
+        `1년(52주) 중 현재 위치: ${pos}% (최저 ${formatNumber(snap.low52)} ~ 최고 ${formatNumber(snap.high52)})`;
+      document.getElementById("t1RangeFill").style.width = `${pos}%`;
+    } else {
+      document.getElementById("t1RangeLabel").textContent = "52주 가격 위치 정보 없음";
+      document.getElementById("t1RangeFill").style.width = "0%";
+    }
+
+    let cards = [];
+    if (isEtf) {
+      const etf = snap.etf_info || {};
+      const dev = etf.deviation_rate;
+      const devHint =
+        dev === null || dev === undefined
+          ? "실제 가치와 비교 정보"
+          : Math.abs(dev) < 0.3
+            ? "실제 가치(NAV)와 거의 같은 정가 거래 중"
+            : dev < 0
+              ? "실제 가치보다 약간 싸게 거래 중"
+              : "실제 가치보다 약간 비싸게 거래 중";
+      cards = [
+        {
+          title: "무엇을 따라가나요? (기초지수)",
+          val: etf.base_index || "-",
+          hint: `운용사: ${etf.issuer || "-"}`,
+        },
+        {
+          title: "제값에 사나요? (NAV / 괴리율)",
+          val: `${formatNumber(etf.nav, "원")} (${dev ?? "-"}%)`,
+          hint: devHint,
+        },
+        {
+          title: "1년 수수료 (총보수)",
+          val: etf.total_fee !== null && etf.total_fee !== undefined ? `연 ${etf.total_fee}%` : "-",
+          hint: "1,000만원 투자 시 연 약 " + (etf.total_fee ? `${Math.round(etf.total_fee * 100000).toLocaleString("ko-KR")}원` : "-"),
+        },
+        {
+          title: "최근 1년 수익률 / 분배금",
+          val: `${etf.return_1y ?? "-"}% / 연 ${snap.dividend_yield ?? "-"}%`,
+          hint: `1개월 ${etf.return_1m ?? "-"}% · 3개월 ${etf.return_3m ?? "-"}%`,
+        },
+      ];
+    } else {
+      const per = snap.per;
+      const perHint =
+        per === null || per === undefined
+          ? "적자 상태이거나 계산 불가"
+          : per < 10
+            ? `버는 돈 대비 싼 편 (추정 ${snap.forward_per ?? "-"}배)`
+            : per <= 20
+              ? `적정한 가격대 (추정 ${snap.forward_per ?? "-"}배)`
+              : `미래 성장 기대감이 큰 편 (추정 ${snap.forward_per ?? "-"}배)`;
+
+      const cur = snap.current_price;
+      const tgt = snap.target_price;
+      let upsideStr = "-";
+      let upsideHint = "증권사 목표가 정보 없음";
+      if (cur && tgt) {
+        const up = (((tgt - cur) / cur) * 100).toFixed(1);
+        upsideStr = `${formatNumber(tgt, "원")} (${up > 0 ? "+" : ""}${up}%)`;
+        upsideHint = "최근 3개월 증권사 전문가 평균 눈높이";
+      }
+
+      const actualFins = (stockData.financials || []).filter((f) => !f.is_consensus);
+      const latestFin = actualFins.length > 0 ? actualFins[actualFins.length - 1] : null;
+      const debt = latestFin ? latestFin.debt_ratio : null;
+      const debtHint =
+        debt === null || debt === undefined
+          ? "재무제표 확인 필요"
+          : debt < 100
+            ? `${latestFin.period} 기준 빚이 적어 매우 튼튼함`
+            : debt < 200
+              ? `${latestFin.period} 기준 무난한 수준`
+              : `${latestFin.period} 기준 빚 비율이 다소 높음`;
+
+      const trend = snap.investor_trend;
+      let trendVal = `외국인 보유 ${snap.foreign_rate ?? "-"}%`;
+      let trendHint = "최근 외국인·기관 수급 정보 없음";
+      if (trend) {
+        const fSign = trend.foreigner > 0 ? "순매수" : trend.foreigner < 0 ? "순매도" : "보합";
+        const oSign = trend.organ > 0 ? "순매수" : trend.organ < 0 ? "순매도" : "보합";
+        trendVal = `외국인 ${fSign} / 기관 ${oSign}`;
+        trendHint = `${trend.date} 기준 외국인 ${formatNumber(trend.foreigner, "주")}`;
+      }
+
+      cards = [
+        { title: "가격 가성비 (PER)", val: formatNumber(per, "배"), hint: perHint },
+        { title: "전문가 목표주가", val: upsideStr, hint: upsideHint },
+        { title: "회사 빚 안전성 (부채비율)", val: debt !== null ? `${debt}%` : "-", hint: debtHint },
+        { title: "큰손 수급 동향", val: trendVal, hint: trendHint },
+      ];
+    }
+
+    const gridEl = document.getElementById("t1BeginnerCards");
+    gridEl.innerHTML = "";
+    cards.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "beginner-item";
+      const t = document.createElement("div");
+      t.className = "beginner-title";
+      t.textContent = c.title;
+      const v = document.createElement("div");
+      v.className = "beginner-val";
+      v.textContent = c.val;
+      const h = document.createElement("div");
+      h.className = "beginner-hint";
+      h.textContent = c.hint;
+      div.append(t, v, h);
+      gridEl.appendChild(div);
+    });
+
+    t1SummaryCard.classList.remove("hidden");
   }
 
   async function sendTab1Request(code, question = "", isInitial = false) {
@@ -348,6 +494,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (isInitial) {
         t1ChatMessages.innerHTML = "";
         t1ContextBar.classList.add("hidden");
+        t1SummaryCard.classList.add("hidden");
       }
     }
     t1LastCode = code;
@@ -384,10 +531,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (data.stock_data) {
         const s = data.stock_data.snapshot || {};
-        t1ContextBar.textContent =
-          `수집 근거 반영됨: ${data.stock_data.name} (${code}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
-          `PER ${formatNumber(s.per, "배")} · PBR ${formatNumber(s.pbr, "배")} · 뉴스 ${(data.stock_data.news || []).length}건`;
+        if (data.stock_data.asset_type === "etf") {
+          const etf = s.etf_info || {};
+          t1ContextBar.textContent =
+            `수집 근거 반영됨: ${data.stock_data.name} (${code}, ETF) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+            `기초지수 ${etf.base_index || "-"} · 총보수 ${etf.total_fee ?? "-"}% · 뉴스 ${(data.stock_data.news || []).length}건`;
+        } else {
+          t1ContextBar.textContent =
+            `수집 근거 반영됨: ${data.stock_data.name} (${code}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+            `PER ${formatNumber(s.per, "배")} · PBR ${formatNumber(s.pbr, "배")} · 뉴스 ${(data.stock_data.news || []).length}건`;
+        }
         t1ContextBar.classList.remove("hidden");
+        renderTab1Summary(data.stock_data);
       }
     } catch (err) {
       thinkingBubble.textContent = `오류: ${err.message}`;
@@ -425,6 +580,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!question) return;
     t1QuestionInput.value = "";
     sendTab1Request(code, question, !t1ConversationId);
+  });
+
+  // 4) 초보자용 원클릭 추천 질문 버튼
+  qqBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = t1CodeInput.value.trim();
+      const question = btn.dataset.q;
+      if (!question) return;
+      sendTab1Request(code, question, !t1ConversationId);
+    });
   });
 
   // -------------------------------------------------------------------------
