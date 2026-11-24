@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=12" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=13" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -89,26 +89,21 @@
               <button type="button" class="tv-tf-btn" data-tf="week">주봉</button>
               <button type="button" class="tv-tf-btn" data-tf="month">월봉</button>
             </div>
-            <div class="tv-ind-group">
-              <label class="tv-ind-toggle"><input type="checkbox" id="indMa5" /> MA5</label>
-              <label class="tv-ind-toggle"><input type="checkbox" id="indMa20" checked /> MA20</label>
-              <label class="tv-ind-toggle"><input type="checkbox" id="indMa60" checked /> MA60</label>
-              <label class="tv-ind-toggle"><input type="checkbox" id="indBb" /> 볼린저밴드</label>
-              <label class="tv-ind-toggle"><input type="checkbox" id="indRsi" /> RSI(14)</label>
-              <label class="tv-ind-toggle"><input type="checkbox" id="indMacd" /> MACD</label>
+            <div class="tv-ind-search-wrap">
+              <input
+                type="text"
+                id="tvIndSearchInput"
+                placeholder="+ 지표 검색/추가 (스토캐스틱, 일목, CCI, ATR, OBV...)"
+                autocomplete="off"
+              />
+              <ul id="tvIndSearchList" class="autocomplete-list tv-ind-dropdown hidden"></ul>
             </div>
           </div>
 
+          <div id="tvActiveIndTags" class="tv-active-tags"></div>
           <div id="t1TvNotice" class="tv-notice hidden"></div>
           <div id="t1TvChartContainer" class="tv-chart-container"></div>
-          <div id="t1TvRsiWrap" class="tv-subchart-wrap hidden">
-            <div class="tv-subchart-label">RSI (14일)</div>
-            <div id="t1TvRsiContainer" class="tv-subchart-container"></div>
-          </div>
-          <div id="t1TvMacdWrap" class="tv-subchart-wrap hidden">
-            <div class="tv-subchart-label">MACD (12, 26, 9)</div>
-            <div id="t1TvMacdContainer" class="tv-subchart-container"></div>
-          </div>
+          <div id="t1TvSubchartsArea"></div>
         </div>
 
         <div id="t1ContextBar" class="context-bar hidden"></div>
@@ -338,6 +333,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=12"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=13"></script>
 </body>
 </html>

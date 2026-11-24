@@ -224,6 +224,12 @@ def chat_analysis():
 
         stock_json = json.dumps(stock_data, ensure_ascii=False)
         stock_data["tech_series"] = tech_series
+        try:
+            stock_data["tv_chart"] = fetch_naver_chart_with_indicators(
+                code, timeframe="day", is_foreign=is_foreign
+            )
+        except Exception:
+            stock_data["tv_chart"] = None
         stock_name = stock_data.get("name", "")
         asset_type = stock_data.get("asset_type", "stock")
 

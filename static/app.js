@@ -317,17 +317,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1TvOhlcvLegend = document.getElementById("t1TvOhlcvLegend");
   const t1TvChartContainer = document.getElementById("t1TvChartContainer");
   const t1TvNotice = document.getElementById("t1TvNotice");
-  const t1TvRsiWrap = document.getElementById("t1TvRsiWrap");
-  const t1TvRsiContainer = document.getElementById("t1TvRsiContainer");
-  const t1TvMacdWrap = document.getElementById("t1TvMacdWrap");
-  const t1TvMacdContainer = document.getElementById("t1TvMacdContainer");
+  const t1TvSubchartsArea = document.getElementById("t1TvSubchartsArea");
   const tvTfBtns = document.querySelectorAll(".tv-tf-btn");
-  const indMa5 = document.getElementById("indMa5");
-  const indMa20 = document.getElementById("indMa20");
-  const indMa60 = document.getElementById("indMa60");
-  const indBb = document.getElementById("indBb");
-  const indRsi = document.getElementById("indRsi");
-  const indMacd = document.getElementById("indMacd");
+  const tvIndSearchInput = document.getElementById("tvIndSearchInput");
+  const tvIndSearchList = document.getElementById("tvIndSearchList");
+  const tvActiveIndTags = document.getElementById("tvActiveIndTags");
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1SummaryCard = document.getElementById("t1SummaryCard");
   const t1TechStrip = document.getElementById("t1TechStrip");
@@ -348,11 +342,30 @@ document.addEventListener("DOMContentLoaded", () => {
   let t1PriceChartInst = null;
   let t1SecondChartInst = null;
   let t1TvChartInst = null;
-  let t1TvRsiInst = null;
-  let t1TvMacdInst = null;
+  let t1TvSubChartInsts = [];
   let t1CurrentStockMeta = null;
   let t1CurrentChartData = null;
   let acTimer = null;
+  const activeTvIndicators = new Set(["ma20", "ma60"]);
+
+  const TV_INDICATOR_CATALOG = [
+    { id: "ma5", name: "MA5 (5일 이동평균)", keywords: "ma5 5일 이동평균 이평선", mode: "overlay" },
+    { id: "ma20", name: "MA20 (20일 이동평균)", keywords: "ma20 20일 이동평균 이평선", mode: "overlay" },
+    { id: "ma60", name: "MA60 (60일 이동평균)", keywords: "ma60 60일 이동평균 이평선", mode: "overlay" },
+    { id: "ma120", name: "MA120 (120일 이동평균)", keywords: "ma120 120일 이동평균 장기이평선", mode: "overlay" },
+    { id: "ema20", name: "EMA20 (20일 지수이동평균)", keywords: "ema20 지수이동평균 exponential", mode: "overlay" },
+    { id: "bb", name: "볼린저밴드 (20, 2)", keywords: "볼린저밴드 bollinger bb 밴드", mode: "overlay" },
+    { id: "ichimoku", name: "일목균형표 (전환선/기준선)", keywords: "일목균형표 ichimoku 전환선 기준선", mode: "overlay" },
+    { id: "vwap20", name: "VWAP (20일 거래량가중평균)", keywords: "vwap 거래량가중평균", mode: "overlay" },
+    { id: "rsi14", name: "RSI (14일 상대강도지수)", keywords: "rsi 14 상대강도 과매수 과매도", mode: "sub" },
+    { id: "macd", name: "MACD (12, 26, 9)", keywords: "macd 오실레이터 시그널", mode: "sub" },
+    { id: "stoch", name: "스토캐스틱 (%K / %D)", keywords: "스토캐스틱 stochastic slow k d", mode: "sub" },
+    { id: "cci20", name: "CCI (20일 상품채널지수)", keywords: "cci 20 상품채널", mode: "sub" },
+    { id: "atr14", name: "ATR (14일 변동성 지표)", keywords: "atr 14 변동성 평균진폭", mode: "sub" },
+    { id: "obv", name: "OBV (거래량 누적 지표)", keywords: "obv 거래량 누적 on balance volume", mode: "sub" },
+    { id: "willr14", name: "Williams %R (14일)", keywords: "williams willr 윌리엄스", mode: "sub" },
+    { id: "mfi14", name: "MFI (14일 자금흐름지수)", keywords: "mfi 14 자금흐름 money flow", mode: "sub" },
+  ];
 
   function resetTab1Chat(
     notice = "위에서 종목명이나 코드를 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
@@ -591,10 +604,35 @@ document.addEventListener("DOMContentLoaded", () => {
     renderTradingViewChart(stockData);
   }
 
+  function renderActiveIndicatorTags() {
+    tvActiveIndTags.innerHTML = "";
+    activeTvIndicators.forEach((id) => {
+      const meta = TV_INDICATOR_CATALOG.find((x) => x.id === id);
+      if (!meta) return;
+      const tag = document.createElement("span");
+      tag.className = `tv-ind-tag ${meta.mode === "sub" ? "sub" : ""}`;
+      tag.textContent = meta.name;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tv-tag-remove";
+      btn.textContent = "×";
+      btn.title = "지표 제거";
+      btn.addEventListener("click", () => {
+        activeTvIndicators.delete(id);
+        renderActiveIndicatorTags();
+        if (t1CurrentChartData) drawTvChartFromData(t1CurrentChartData);
+      });
+
+      tag.appendChild(btn);
+      tvActiveIndTags.appendChild(tag);
+    });
+  }
+
   function renderTradingViewChart(stockData) {
-    const s = stockData.tech_series || {};
-    const ohlcv = s.ohlcv || [];
-    if (!window.LightweightCharts || ohlcv.length === 0) {
+    const fallbackSeries = stockData.tech_series || {};
+    const tvChart = stockData.tv_chart;
+    if (!window.LightweightCharts || (!tvChart && !(fallbackSeries.ohlcv || []).length)) {
       t1TradingViewCard.classList.add("hidden");
       return;
     }
@@ -607,32 +645,36 @@ document.addEventListener("DOMContentLoaded", () => {
       currency: isUs ? "USD" : "KRW",
     };
 
-    const dates = s.dates || [];
-    const buildPairs = (arr) =>
-      dates
-        .map((t, i) => (arr && arr[i] !== null && arr[i] !== undefined ? { time: t, value: arr[i] } : null))
-        .filter(Boolean);
-
-    t1CurrentChartData = {
-      code: stockData.code,
-      timeframe: "day",
-      is_minute: false,
-      is_foreign: isUs,
-      ohlcv: ohlcv.map((d) => ({ ...d, label: d.time })),
-      ma5: buildPairs(s.ma5),
-      ma20: buildPairs(s.ma20),
-      ma60: buildPairs(s.ma60),
-      bb_upper: buildPairs(s.bb_upper),
-      bb_lower: buildPairs(s.bb_lower),
-      rsi14: buildPairs(s.rsi14),
-      macd: buildPairs(s.macd),
-      macd_signal: buildPairs(s.macd_signal),
-      macd_hist: buildPairs(s.macd_hist),
-    };
+    if (tvChart && tvChart.ohlcv?.length) {
+      t1CurrentChartData = tvChart;
+    } else {
+      const dates = fallbackSeries.dates || [];
+      const buildPairs = (arr) =>
+        dates
+          .map((t, i) => (arr && arr[i] !== null && arr[i] !== undefined ? { time: t, value: arr[i] } : null))
+          .filter(Boolean);
+      t1CurrentChartData = {
+        code: stockData.code,
+        timeframe: "day",
+        is_minute: false,
+        is_foreign: isUs,
+        ohlcv: (fallbackSeries.ohlcv || []).map((d) => ({ ...d, label: d.time })),
+        ma5: buildPairs(fallbackSeries.ma5),
+        ma20: buildPairs(fallbackSeries.ma20),
+        ma60: buildPairs(fallbackSeries.ma60),
+        bb_upper: buildPairs(fallbackSeries.bb_upper),
+        bb_lower: buildPairs(fallbackSeries.bb_lower),
+        rsi14: buildPairs(fallbackSeries.rsi14),
+        macd: buildPairs(fallbackSeries.macd),
+        macd_signal: buildPairs(fallbackSeries.macd_signal),
+        macd_hist: buildPairs(fallbackSeries.macd_hist),
+      };
+    }
 
     tvTfBtns.forEach((b) => b.classList.toggle("active", b.dataset.tf === "day"));
     t1TvNotice.classList.add("hidden");
     t1TradingViewCard.classList.remove("hidden");
+    renderActiveIndicatorTags();
     drawTvChartFromData(t1CurrentChartData);
   }
 
@@ -641,7 +683,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const meta = t1CurrentStockMeta || { code: chartData.code, name: chartData.code, isUs: chartData.is_foreign, currency: chartData.is_foreign ? "USD" : "KRW" };
+    const meta = t1CurrentStockMeta || {
+      code: chartData.code,
+      name: chartData.code,
+      isUs: chartData.is_foreign,
+      currency: chartData.is_foreign ? "USD" : "KRW",
+    };
     const isUs = meta.isUs;
     const currency = meta.currency;
     const ohlcv = chartData.ohlcv;
@@ -649,12 +696,11 @@ document.addEventListener("DOMContentLoaded", () => {
     t1TvTitle.textContent = `📈 ${meta.name} (${meta.code}) 실시간 캔들 · 거래량 차트 (${chartData.timeframe})`;
 
     if (t1TvChartInst) { t1TvChartInst.remove(); t1TvChartInst = null; }
-    if (t1TvRsiInst) { t1TvRsiInst.remove(); t1TvRsiInst = null; }
-    if (t1TvMacdInst) { t1TvMacdInst.remove(); t1TvMacdInst = null; }
+    t1TvSubChartInsts.forEach((inst) => inst.remove());
+    t1TvSubChartInsts = [];
 
     t1TvChartContainer.innerHTML = "";
-    t1TvRsiContainer.innerHTML = "";
-    t1TvMacdContainer.innerHTML = "";
+    t1TvSubchartsArea.innerHTML = "";
 
     const chartWidth = t1TvChartContainer.clientWidth || 800;
     const chart = LightweightCharts.createChart(t1TvChartContainer, {
@@ -681,19 +727,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     candleSeries.setData(ohlcv.map((d) => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
 
-    // 체크박스 상태에 따라 오버레이 지표 추가
-    if (indMa5.checked && chartData.ma5?.length) {
-      chart.addLineSeries({ color: "#ec4899", lineWidth: 1.5, title: "MA5" }).setData(chartData.ma5);
-    }
-    if (indMa20.checked && chartData.ma20?.length) {
-      chart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "MA20" }).setData(chartData.ma20);
-    }
-    if (indMa60.checked && chartData.ma60?.length) {
-      chart.addLineSeries({ color: "#10b981", lineWidth: 1.5, title: "MA60" }).setData(chartData.ma60);
-    }
-    if (indBb.checked && chartData.bb_upper?.length && chartData.bb_lower?.length) {
+    // 활성화된 오버레이 지표 렌더링
+    const overlayLines = [
+      { id: "ma5", key: "ma5", color: "#ec4899", title: "MA5" },
+      { id: "ma20", key: "ma20", color: "#f59e0b", title: "MA20" },
+      { id: "ma60", key: "ma60", color: "#10b981", title: "MA60" },
+      { id: "ma120", key: "ma120", color: "#6366f1", title: "MA120" },
+      { id: "ema20", key: "ema20", color: "#06b6d4", title: "EMA20" },
+      { id: "vwap20", key: "vwap20", color: "#a855f7", title: "VWAP20" },
+    ];
+    overlayLines.forEach((cfg) => {
+      if (activeTvIndicators.has(cfg.id) && chartData[cfg.key]?.length) {
+        chart.addLineSeries({ color: cfg.color, lineWidth: 1.5, title: cfg.title }).setData(chartData[cfg.key]);
+      }
+    });
+
+    if (activeTvIndicators.has("bb") && chartData.bb_upper?.length && chartData.bb_lower?.length) {
       chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB상단" }).setData(chartData.bb_upper);
       chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB하단" }).setData(chartData.bb_lower);
+    }
+
+    if (activeTvIndicators.has("ichimoku") && chartData.ichi_conv?.length && chartData.ichi_base?.length) {
+      chart.addLineSeries({ color: "#ef4444", lineWidth: 1.4, title: "전환선" }).setData(chartData.ichi_conv);
+      chart.addLineSeries({ color: "#2563eb", lineWidth: 1.4, title: "기준선" }).setData(chartData.ichi_base);
     }
 
     // 하단 거래량 히스토그램
@@ -710,7 +766,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }))
     );
 
-    // 범례 맵 (시간 -> 라벨)
     const labelMap = new Map(ohlcv.map((d) => [d.time, d.label || d.time]));
     const last = ohlcv[ohlcv.length - 1];
     const updateLegend = (bar, vol) => {
@@ -735,48 +790,84 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     chart.timeScale().fitContent();
 
-    // 보조 지표 1: RSI(14)
-    if (indRsi.checked && chartData.rsi14?.length) {
-      t1TvRsiWrap.classList.remove("hidden");
-      t1TvRsiInst = LightweightCharts.createChart(t1TvRsiContainer, {
-        width: chartWidth,
-        height: 130,
-        layout: { background: { color: "#ffffff" }, textColor: "#475569" },
-        grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
-        timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute) },
-      });
-      t1TvRsiInst.addLineSeries({ color: "#8b5cf6", lineWidth: 2, title: "RSI14" }).setData(chartData.rsi14);
-      t1TvRsiInst.timeScale().fitContent();
-    } else {
-      t1TvRsiWrap.classList.add("hidden");
-    }
+    // 동적 보조 차트 생성 헬퍼
+    const createSubChart = (label, buildFn) => {
+      const wrap = document.createElement("div");
+      wrap.className = "tv-subchart-wrap";
+      const lbl = document.createElement("div");
+      lbl.className = "tv-subchart-label";
+      lbl.textContent = label;
+      const box = document.createElement("div");
+      box.className = "tv-subchart-container";
+      wrap.append(lbl, box);
+      t1TvSubchartsArea.appendChild(wrap);
 
-    // 보조 지표 2: MACD
-    if (indMacd.checked && chartData.macd?.length) {
-      t1TvMacdWrap.classList.remove("hidden");
-      t1TvMacdInst = LightweightCharts.createChart(t1TvMacdContainer, {
+      const sub = LightweightCharts.createChart(box, {
         width: chartWidth,
         height: 130,
         layout: { background: { color: "#ffffff" }, textColor: "#475569" },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute) },
       });
-      t1TvMacdInst.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "MACD" }).setData(chartData.macd);
-      if (chartData.macd_signal?.length) {
-        t1TvMacdInst.addLineSeries({ color: "#ef4444", lineWidth: 1.5, title: "Signal" }).setData(chartData.macd_signal);
-      }
-      if (chartData.macd_hist?.length) {
-        t1TvMacdInst.addHistogramSeries({ title: "Hist" }).setData(
-          chartData.macd_hist.map((d) => ({
-            time: d.time,
-            value: d.value,
-            color: d.value >= 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(59, 130, 246, 0.45)",
-          }))
-        );
-      }
-      t1TvMacdInst.timeScale().fitContent();
-    } else {
-      t1TvMacdWrap.classList.add("hidden");
+      buildFn(sub);
+      sub.timeScale().fitContent();
+      t1TvSubChartInsts.push(sub);
+    };
+
+    if (activeTvIndicators.has("rsi14") && chartData.rsi14?.length) {
+      createSubChart("RSI (14일)", (sub) => {
+        sub.addLineSeries({ color: "#8b5cf6", lineWidth: 2, title: "RSI14" }).setData(chartData.rsi14);
+      });
+    }
+    if (activeTvIndicators.has("macd") && chartData.macd?.length) {
+      createSubChart("MACD (12, 26, 9)", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "MACD" }).setData(chartData.macd);
+        if (chartData.macd_signal?.length) {
+          sub.addLineSeries({ color: "#ef4444", lineWidth: 1.5, title: "Signal" }).setData(chartData.macd_signal);
+        }
+        if (chartData.macd_hist?.length) {
+          sub.addHistogramSeries({ title: "Hist" }).setData(
+            chartData.macd_hist.map((d) => ({
+              time: d.time,
+              value: d.value,
+              color: d.value >= 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(59, 130, 246, 0.45)",
+            }))
+          );
+        }
+      });
+    }
+    if (activeTvIndicators.has("stoch") && chartData.stoch_k?.length) {
+      createSubChart("스토캐스틱 (%K / %D)", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "%K" }).setData(chartData.stoch_k);
+        if (chartData.stoch_d?.length) {
+          sub.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "%D" }).setData(chartData.stoch_d);
+        }
+      });
+    }
+    if (activeTvIndicators.has("cci20") && chartData.cci20?.length) {
+      createSubChart("CCI (20일)", (sub) => {
+        sub.addLineSeries({ color: "#0ea5e9", lineWidth: 1.8, title: "CCI20" }).setData(chartData.cci20);
+      });
+    }
+    if (activeTvIndicators.has("atr14") && chartData.atr14?.length) {
+      createSubChart("ATR (14일 변동성)", (sub) => {
+        sub.addLineSeries({ color: "#f97316", lineWidth: 1.8, title: "ATR14" }).setData(chartData.atr14);
+      });
+    }
+    if (activeTvIndicators.has("obv") && chartData.obv?.length) {
+      createSubChart("OBV (거래량 누적)", (sub) => {
+        sub.addLineSeries({ color: "#14b8a6", lineWidth: 1.8, title: "OBV" }).setData(chartData.obv);
+      });
+    }
+    if (activeTvIndicators.has("willr14") && chartData.willr14?.length) {
+      createSubChart("Williams %R (14일)", (sub) => {
+        sub.addLineSeries({ color: "#e11d48", lineWidth: 1.8, title: "WillR" }).setData(chartData.willr14);
+      });
+    }
+    if (activeTvIndicators.has("mfi14") && chartData.mfi14?.length) {
+      createSubChart("MFI (14일 자금흐름지수)", (sub) => {
+        sub.addLineSeries({ color: "#10b981", lineWidth: 1.8, title: "MFI14" }).setData(chartData.mfi14);
+      });
     }
   }
 
@@ -805,13 +896,45 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 지표 토글 체크박스 (MA5, MA20, MA60, 볼린저밴드, RSI, MACD)
-  [indMa5, indMa20, indMa60, indBb, indRsi, indMacd].forEach((chk) => {
-    chk.addEventListener("change", () => {
-      if (t1CurrentChartData) {
-        drawTvChartFromData(t1CurrentChartData);
-      }
+  // 실시간 지표 검색/추가 드롭다운
+  function showIndicatorSuggestions(queryText) {
+    const q = (queryText || "").trim().toLowerCase();
+    const matches = TV_INDICATOR_CATALOG.filter((item) => {
+      if (!q) return true;
+      return item.name.toLowerCase().includes(q) || item.keywords.includes(q);
     });
+
+    tvIndSearchList.innerHTML = "";
+    if (matches.length === 0) {
+      tvIndSearchList.classList.add("hidden");
+      return;
+    }
+
+    matches.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "autocomplete-item";
+      const isAdded = activeTvIndicators.has(item.id);
+      const areaLabel = item.mode === "overlay" ? "메인차트" : "보조차트";
+      li.innerHTML = `<span class="ac-name">${item.name}</span><span class="ac-meta">${isAdded ? "추가됨 ✓" : areaLabel}</span>`;
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        activeTvIndicators.add(item.id);
+        tvIndSearchInput.value = "";
+        tvIndSearchList.classList.add("hidden");
+        renderActiveIndicatorTags();
+        if (t1CurrentChartData) drawTvChartFromData(t1CurrentChartData);
+      });
+      tvIndSearchList.appendChild(li);
+    });
+    tvIndSearchList.classList.remove("hidden");
+  }
+
+  tvIndSearchInput.addEventListener("focus", () => showIndicatorSuggestions(tvIndSearchInput.value));
+  tvIndSearchInput.addEventListener("input", () => showIndicatorSuggestions(tvIndSearchInput.value));
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".tv-ind-search-wrap")) {
+      tvIndSearchList.classList.add("hidden");
+    }
   });
 
   function renderTab1Disclosures(stockData) {

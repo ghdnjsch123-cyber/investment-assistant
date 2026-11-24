@@ -132,14 +132,33 @@ def fetch_naver_chart_with_indicators(
     df = df.dropna(subset=["Close"])
 
     close = df["Close"].astype(float)
+    high = df["High"].astype(float).fillna(close) if "High" in df.columns else close
+    low = df["Low"].astype(float).fillna(close) if "Low" in df.columns else close
+    vol = df["Volume"].astype(float).fillna(0.0) if "Volume" in df.columns else pd.Series(0.0, index=df.index)
+
+    # 1. 이동평균선 (MA5/20/60/120, EMA20)
     df["MA5"] = close.rolling(window=5).mean()
     df["MA20"] = close.rolling(window=20).mean()
     df["MA60"] = close.rolling(window=60).mean()
+    df["MA120"] = close.rolling(window=120).mean()
+    df["EMA20"] = close.ewm(span=20, adjust=False).mean()
 
+    # 2. 볼린저밴드 (20, 2)
     std20 = close.rolling(window=20).std()
     df["BB_UPPER"] = df["MA20"] + (std20 * 2.0)
     df["BB_LOWER"] = df["MA20"] - (std20 * 2.0)
 
+    # 3. 일목균형표 (전환선 9, 기준선 26)
+    df["ICHI_CONV"] = (high.rolling(9).max() + low.rolling(9).min()) / 2.0
+    df["ICHI_BASE"] = (high.rolling(26).max() + low.rolling(26).min()) / 2.0
+
+    # 4. VWAP (거래량가중평균가격 - 누적/20일 이동 VWAP)
+    typical_price = (high + low + close) / 3.0
+    tp_vol = (typical_price * vol).rolling(20).sum()
+    vol_sum20 = vol.rolling(20).sum().replace(0, np.nan)
+    df["VWAP20"] = tp_vol / vol_sum20
+
+    # 5. RSI (14일)
     delta = close.diff()
     gain = delta.clip(lower=0.0)
     loss = -delta.clip(upper=0.0)
@@ -149,11 +168,46 @@ def fetch_naver_chart_with_indicators(
     df["RSI14"] = 100.0 - (100.0 / (1.0 + rs))
     df.loc[avg_loss == 0, "RSI14"] = 100.0
 
+    # 6. MACD (12, 26, 9)
     ema12 = close.ewm(span=12, adjust=False).mean()
     ema26 = close.ewm(span=26, adjust=False).mean()
     df["MACD"] = ema12 - ema26
     df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
     df["MACD_HIST"] = df["MACD"] - df["MACD_SIGNAL"]
+
+    # 7. 스토캐스틱 (14, 3, 3)
+    low14 = low.rolling(14).min()
+    high14 = high.rolling(14).max()
+    fast_k = ((close - low14) / (high14 - low14).replace(0, np.nan)) * 100.0
+    df["STOCH_K"] = fast_k.rolling(3).mean()
+    df["STOCH_D"] = df["STOCH_K"].rolling(3).mean()
+
+    # 8. CCI (20일)
+    tp_sma = typical_price.rolling(20).mean()
+    mad = typical_price.rolling(20).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
+    df["CCI20"] = (typical_price - tp_sma) / (0.015 * mad.replace(0, np.nan))
+
+    # 9. ATR (14일)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs(),
+    ], axis=1).max(axis=1)
+    df["ATR14"] = tr.rolling(14).mean()
+
+    # 10. OBV (On-Balance Volume)
+    direction = np.sign(close.diff()).fillna(0.0)
+    df["OBV"] = (direction * vol).cumsum()
+
+    # 11. Williams %R (14일)
+    df["WILLR14"] = ((high14 - close) / (high14 - low14).replace(0, np.nan)) * -100.0
+
+    # 12. MFI (14일 - 자금흐름지수)
+    raw_mf = typical_price * vol
+    pos_mf = raw_mf.where(typical_price > typical_price.shift(1), 0.0).rolling(14).sum()
+    neg_mf = raw_mf.where(typical_price < typical_price.shift(1), 0.0).rolling(14).sum().replace(0, np.nan)
+    mfr = pos_mf / neg_mf
+    df["MFI14"] = 100.0 - (100.0 / (1.0 + mfr))
 
     view = df.tail(180).copy()
     price_dec = 2 if is_foreign else 0
@@ -198,12 +252,24 @@ def fetch_naver_chart_with_indicators(
         "ma5": _tv_line("MA5", price_dec),
         "ma20": _tv_line("MA20", price_dec),
         "ma60": _tv_line("MA60", price_dec),
+        "ma120": _tv_line("MA120", price_dec),
+        "ema20": _tv_line("EMA20", price_dec),
         "bb_upper": _tv_line("BB_UPPER", price_dec),
         "bb_lower": _tv_line("BB_LOWER", price_dec),
+        "ichi_conv": _tv_line("ICHI_CONV", price_dec),
+        "ichi_base": _tv_line("ICHI_BASE", price_dec),
+        "vwap20": _tv_line("VWAP20", price_dec),
         "rsi14": _tv_line("RSI14", 2),
         "macd": _tv_line("MACD", 2),
         "macd_signal": _tv_line("MACD_SIGNAL", 2),
         "macd_hist": _tv_line("MACD_HIST", 2),
+        "stoch_k": _tv_line("STOCH_K", 2),
+        "stoch_d": _tv_line("STOCH_D", 2),
+        "cci20": _tv_line("CCI20", 2),
+        "atr14": _tv_line("ATR14", 2),
+        "obv": _tv_line("OBV", 0),
+        "willr14": _tv_line("WILLR14", 2),
+        "mfi14": _tv_line("MFI14", 2),
     }
 
 
