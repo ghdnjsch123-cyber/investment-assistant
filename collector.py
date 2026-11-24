@@ -19,14 +19,21 @@ DEFAULT_HEADERS = {
 }
 
 
+def is_foreign_code(code: str) -> bool:
+    """국내 6자리 숫자 코드가 아니면 해외(미국) 종목으로 판별합니다."""
+    return not bool(re.fullmatch(r"\d{6}", str(code).strip()))
+
+
 def validate_stock_code(code: str) -> str:
-    """종목코드가 6자리 숫자인지 검증하고 정제된 문자열을 반환합니다."""
+    """국내 6자리 코드 또는 미국 종목 티커/로이터코드(예: NVDA.O, AAPL)를 검증합니다."""
     if not code or not isinstance(code, str):
         raise ValueError("종목코드가 입력되지 않았습니다.")
-    cleaned = code.strip()
-    if not re.fullmatch(r"\d{6}", cleaned):
-        raise ValueError("종목코드는 6자리 숫자여야 합니다. (예: 000660)")
-    return cleaned
+    cleaned = code.strip().upper()
+    if re.fullmatch(r"\d{6}", cleaned):
+        return cleaned
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9.\-]{0,14}", cleaned):
+        return cleaned
+    raise ValueError("올바른 종목코드를 입력해 주세요. (예: 000660, NVDA.O)")
 
 
 def clean_number(value, is_float: bool = False):
@@ -67,11 +74,12 @@ def parse_korean_market_cap(value: str):
 
 
 def fetch_basic_info(code: str) -> dict:
-    """네이버 증권 내부 JSON API(basic)를 호출해 공식 종목명과 기본 시세를 가져옵니다."""
+    """네이버 증권 내부 JSON API(basic)를 호출해 국내/해외 공식 종목명과 기본 시세를 가져옵니다."""
     code = validate_stock_code(code)
-    url = f"https://m.stock.naver.com/api/stock/{code}/basic"
+    foreign = is_foreign_code(code)
+    url = f"https://api.stock.naver.com/stock/{code}/basic" if foreign else f"https://m.stock.naver.com/api/stock/{code}/basic"
 
-    logger.info("[NAVER] 네이버 증권 JSON API 접근 시작 (User-Agent 적용): %s", url)
+    logger.info("[NAVER] 네이버 증권 JSON API 접근 시작 (foreign=%s): %s", foreign, url)
 
     try:
         resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=10)
@@ -94,19 +102,24 @@ def fetch_basic_info(code: str) -> dict:
     if not stock_name:
         raise ValueError("공식 종목명을 파싱할 수 없습니다. (네이버 데이터 구조 확인 필요)")
 
-    current_price = clean_number(data.get("closePrice"), is_float=False)
+    current_price = clean_number(data.get("closePrice"), is_float=foreign)
     change_rate = clean_number(data.get("fluctuationsRatio"), is_float=True)
-    change_price = clean_number(data.get("compareToPreviousClosePrice"), is_float=False)
+    change_price = clean_number(data.get("compareToPreviousClosePrice"), is_float=foreign)
     asset_type = "etf" if data.get("stockEndType") == "etf" else "stock"
-    market_name = (data.get("stockExchangeType") or {}).get("nameKor", "")
+    market_name = (data.get("stockExchangeType") or {}).get("nameKor", "") or (data.get("stockExchangeName") or "")
 
-    logger.info("[PARSE] 기본 시세 추출 완료 (name=%s, type=%s, current_price=%s)", stock_name, asset_type, current_price)
+    logger.info("[PARSE] 기본 시세 추출 완료 (name=%s, type=%s, foreign=%s, price=%s)",
+                stock_name, asset_type, foreign, current_price)
 
     return {
         "code": code,
         "name": stock_name,
+        "name_eng": data.get("stockNameEng", ""),
         "asset_type": asset_type,
+        "market_country": "US" if foreign else "KR",
+        "currency": "USD" if foreign else "KRW",
         "market": market_name,
+        "_basic_total_infos": data.get("stockItemTotalInfos") or [],
         "snapshot": {
             "current_price": current_price,
             "change_rate": change_rate,
@@ -115,10 +128,11 @@ def fetch_basic_info(code: str) -> dict:
     }
 
 
-def fetch_integration_info(code: str) -> dict:
-    """네이버 증권 integration API에서 밸류에이션, 시총, 52주 최고/최저, 목표주가를 가져옵니다."""
+def fetch_integration_info(code: str, basic_total_infos: list = None) -> dict:
+    """네이버 증권 integration API에서 밸류에이션, 시총, 52주 최고/최저, 목표주가, ETF 지표를 가져옵니다."""
     code = validate_stock_code(code)
-    url = f"https://m.stock.naver.com/api/stock/{code}/integration"
+    foreign = is_foreign_code(code)
+    url = f"https://api.stock.naver.com/stock/{code}/integration" if foreign else f"https://m.stock.naver.com/api/stock/{code}/integration"
 
     logger.info("[NAVER] 네이버 증권 투자정보 JSON API 접근 시작: %s", url)
 
@@ -137,11 +151,17 @@ def fetch_integration_info(code: str) -> dict:
     except ValueError as e:
         raise ValueError("투자정보 응답을 JSON으로 변환하는 데 실패했습니다.") from e
 
-    # totalInfos 리스트를 code 기준 딕셔너리로 변환
+    # 국내는 data.totalInfos, 해외는 basic.stockItemTotalInfos 사용
+    raw_infos = data.get("totalInfos") or basic_total_infos or []
     total_map = {
         item.get("code"): item.get("value")
-        for item in data.get("totalInfos", [])
+        for item in raw_infos
         if item.get("code")
+    }
+    total_desc_map = {
+        item.get("code"): item.get("valueDesc")
+        for item in raw_infos
+        if item.get("code") and item.get("valueDesc")
     }
     consensus = data.get("consensusInfo") or {}
     etf_ind = data.get("etfKeyIndicator") or {}
@@ -149,34 +169,38 @@ def fetch_integration_info(code: str) -> dict:
 
     high52 = clean_number(
         total_map.get("highPriceOf52WeeksAdjusted") or total_map.get("highPriceOf52Weeks"),
-        is_float=False,
+        is_float=foreign,
     )
     low52 = clean_number(
         total_map.get("lowPriceOf52WeeksAdjusted") or total_map.get("lowPriceOf52Weeks"),
-        is_float=False,
+        is_float=foreign,
     )
 
+    # 해외 시총은 valueDesc(원화) 우선 파싱, 없으면 텍스트 그대로 보관
+    market_val_raw = total_desc_map.get("marketValue") if foreign else (total_map.get("marketValue") or etf_ind.get("marketValue"))
+
     metrics = {
-        "market_cap": parse_korean_market_cap(total_map.get("marketValue") or etf_ind.get("marketValue")),
+        "market_cap": parse_korean_market_cap(market_val_raw),
+        "market_cap_display": total_map.get("marketValue") if foreign else None,
         "high52": high52,
         "low52": low52,
         "volume": clean_number(total_map.get("accumulatedTradingVolume"), is_float=False),
         "trading_value": total_map.get("accumulatedTradingValue"),
-        "open_price": clean_number(total_map.get("openPrice"), is_float=False),
-        "high_price": clean_number(total_map.get("highPrice"), is_float=False),
-        "low_price": clean_number(total_map.get("lowPrice"), is_float=False),
+        "open_price": clean_number(total_map.get("openPrice"), is_float=foreign),
+        "high_price": clean_number(total_map.get("highPrice"), is_float=foreign),
+        "low_price": clean_number(total_map.get("lowPrice"), is_float=foreign),
         "foreign_rate": clean_number(total_map.get("foreignRate"), is_float=True),
         "per": clean_number(total_map.get("per"), is_float=True),
-        "eps": clean_number(total_map.get("eps"), is_float=False),
+        "eps": clean_number(total_map.get("eps"), is_float=foreign),
         "forward_per": clean_number(total_map.get("cnsPer"), is_float=True),
-        "forward_eps": clean_number(total_map.get("cnsEps"), is_float=False),
+        "forward_eps": clean_number(total_map.get("cnsEps"), is_float=foreign),
         "pbr": clean_number(total_map.get("pbr"), is_float=True),
-        "bps": clean_number(total_map.get("bps"), is_float=False),
+        "bps": clean_number(total_map.get("bps"), is_float=foreign),
         "dividend_yield": clean_number(
             total_map.get("dividendYieldRatio") or etf_ind.get("dividendYieldTtm"),
             is_float=True,
         ),
-        "target_price": clean_number(consensus.get("priceTargetMean"), is_float=False),
+        "target_price": clean_number(consensus.get("priceTargetMean"), is_float=foreign),
     }
 
     # 최근 수급 (외국인 / 기관 / 개인 순매수)
@@ -406,12 +430,16 @@ def fetch_market_environment() -> dict:
 
 
 def collect_stock_data(code: str) -> dict:
-    """종목코드를 받아 시세, 밸류에이션, 실적, 뉴스, 시장환경을 통합 수집합니다. (부분 실패 허용)"""
+    """종목코드를 받아 시세, 밸류에이션, 실적, 뉴스, 시장환경을 통합 수집합니다. (국내/미국 통합 지원)"""
     code = validate_stock_code(code)
+    foreign = is_foreign_code(code)
     result = {
         "code": code,
         "name": None,
+        "name_eng": "",
         "asset_type": "stock",
+        "market_country": "US" if foreign else "KR",
+        "currency": "USD" if foreign else "KRW",
         "market": "",
         "snapshot": {},
         "financials": [],
@@ -421,11 +449,16 @@ def collect_stock_data(code: str) -> dict:
     }
 
     # 1. 기본 시세 및 공식 종목명 (필수 선행 단계)
+    basic_total_infos = []
     try:
         basic = fetch_basic_info(code)
         result["name"] = basic["name"]
+        result["name_eng"] = basic.get("name_eng", "")
         result["asset_type"] = basic.get("asset_type", "stock")
+        result["market_country"] = basic.get("market_country", result["market_country"])
+        result["currency"] = basic.get("currency", result["currency"])
         result["market"] = basic.get("market", "")
+        basic_total_infos = basic.get("_basic_total_infos") or []
         result["snapshot"].update(basic["snapshot"])
     except Exception as e:
         logger.error("[ERROR] 기본 시세 수집 실패: %s", e, exc_info=True)
@@ -434,7 +467,7 @@ def collect_stock_data(code: str) -> dict:
 
     # 2. 투자정보 및 밸류에이션 / ETF 지표 (부분 실패 허용)
     try:
-        integration = fetch_integration_info(code)
+        integration = fetch_integration_info(code, basic_total_infos=basic_total_infos)
         result["snapshot"].update(integration)
         # 52주 최저~최고 대비 현재가 위치(%) 계산
         cur = result["snapshot"].get("current_price")
@@ -447,8 +480,8 @@ def collect_stock_data(code: str) -> dict:
         logger.error("[ERROR] 투자정보 수집 실패: %s", e, exc_info=True)
         result["errors"].append({"area": "integration", "message": str(e)})
 
-    # 3. 와이즈리포트 기업실적분석 (ETF가 아닌 일반 주식일 때만 조회)
-    if result["asset_type"] != "etf":
+    # 3. 와이즈리포트 기업실적분석 (국내 일반 주식일 때만 조회)
+    if not foreign and result["asset_type"] != "etf":
         try:
             result["financials"] = fetch_financials(code)
         except Exception as e:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=10" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -51,8 +51,9 @@
           <div class="quick-examples inline">
             <button type="button" class="chip-btn t1-chip" data-code="000660">000660 SK하이닉스</button>
             <button type="button" class="chip-btn t1-chip" data-code="005930">005930 삼성전자</button>
-            <button type="button" class="chip-btn t1-chip" data-code="035420">035420 NAVER</button>
             <button type="button" class="chip-btn t1-chip etf-chip" data-code="069500">069500 KODEX 200 (ETF)</button>
+            <button type="button" class="chip-btn t1-chip us-chip" data-code="NVDA.O">NVDA 엔비디아 (미국)</button>
+            <button type="button" class="chip-btn t1-chip us-chip" data-code="AAPL.O">AAPL 애플 (미국)</button>
           </div>
         </form>
 
@@ -306,6 +307,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=10"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=11"></script>
 </body>
 </html>

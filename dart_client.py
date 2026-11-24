@@ -190,11 +190,44 @@ def _get_stock_catalog() -> list:
 
 
 def search_stock_catalog(query: str, limit: int = 10) -> list:
-    """종목명 또는 종목코드 일부로 자동완성 후보 목록을 검색합니다."""
+    """네이버 통합 검색 API(국내+미국 주식/ETF)로 자동완성 후보를 조회하고, 실패 시 로컬 카탈로그로 fallback합니다."""
     q = (query or "").strip()
     if not q:
         return []
 
+    # 1차: 네이버 증권 통합 검색 API (국내 주식/ETF + 미국 주식/ETF 실시간 지원)
+    try:
+        resp = requests.get(
+            "https://m.stock.naver.com/front-api/search",
+            params={"q": q, "target": "stock", "size": limit, "page": 1},
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://stock.naver.com/"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            items = ((resp.json() or {}).get("result") or {}).get("items") or []
+            results = []
+            for item in items:
+                nation = item.get("nationCode", "")
+                if nation not in ("KOR", "USA"):
+                    continue
+                is_etf = bool(item.get("isEtf")) or item.get("category") == "etf"
+                prefix = "미국" if nation == "USA" else "국내"
+                kind = f"{prefix} {'ETF' if is_etf else '주식'}"
+                reuters_code = item.get("reutersCode") or item.get("code")
+                if reuters_code and item.get("name"):
+                    results.append({
+                        "code": reuters_code,
+                        "symbol": item.get("code", reuters_code),
+                        "name": item.get("name"),
+                        "type": kind,
+                        "nation": nation,
+                    })
+            if results:
+                return results[:limit]
+    except Exception as e:
+        logger.warning("[SEARCH] 네이버 통합 검색 fallback 전환: %s", e)
+
+    # 2차: 로컬 DART+FDR 카탈로그 fallback
     q_lower = q.lower()
     catalog = _get_stock_catalog()
 
@@ -219,15 +252,19 @@ def search_stock_catalog(query: str, limit: int = 10) -> list:
 
 
 def resolve_stock_code(query_or_code: str) -> str:
-    """입력값이 6자리 코드면 그대로 반환하고, 종목명이면 가장 일치하는 6자리 코드를 찾아 반환합니다."""
+    """국내 6자리 또는 로이터코드(NVDA.O)면 그대로 반환하고, 종목명/티커(NVDA, 애플)면 네이버 검색으로 코드를 찾습니다."""
     cleaned = (query_or_code or "").strip()
+    if not cleaned:
+        return cleaned
     if cleaned.isdigit() and len(cleaned) == 6:
         return cleaned
+    if "." in cleaned and cleaned.replace(".", "").replace("-", "").isalnum():
+        return cleaned.upper()
 
     matches = search_stock_catalog(cleaned, limit=1)
     if matches:
         return matches[0]["code"]
-    return cleaned
+    return cleaned.upper()
 
 
 if __name__ == "__main__":

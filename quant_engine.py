@@ -1,10 +1,58 @@
 import logging
 from datetime import datetime, timedelta
+import requests
 import numpy as np
 import pandas as pd
 import FinanceDataReader as fdr
 
 logger = logging.getLogger("StockAssistant")
+
+NAVER_CHART_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://stock.naver.com/",
+}
+
+
+def fetch_naver_chart_history(code: str, is_foreign: bool = False, days: int = 365) -> pd.DataFrame:
+    """네이버 증권 차트 JSON API에서 국내/해외 종목의 일봉 OHLCV 데이터를 직접 조회합니다."""
+    cleaned_code = str(code).strip()
+    end_dt = datetime.today() + timedelta(days=1)
+    start_dt = end_dt - timedelta(days=days)
+
+    market_seg = "foreign" if is_foreign else "domestic"
+    url = f"https://api.stock.naver.com/chart/{market_seg}/item/{cleaned_code}/day"
+    params = {
+        "startDateTime": start_dt.strftime("%Y%m%d0000"),
+        "endDateTime": end_dt.strftime("%Y%m%d0000"),
+    }
+
+    logger.info("[NAVER-CHART] 네이버 차트 JSON API 조회 (code=%s, foreign=%s)", cleaned_code, is_foreign)
+    resp = requests.get(url, params=params, headers=NAVER_CHART_HEADERS, timeout=10)
+    if resp.status_code != 200:
+        raise RuntimeError(f"네이버 차트 API 호출 실패 (HTTP {resp.status_code})")
+
+    rows = resp.json()
+    if not isinstance(rows, list) or len(rows) < 20:
+        raise ValueError(f"네이버 차트 데이터 부족 (code={cleaned_code})")
+
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["localDate"], format="%Y%m%d")
+    df = df.set_index("Date").sort_index()
+    df = df.rename(columns={
+        "openPrice": "Open",
+        "highPrice": "High",
+        "lowPrice": "Low",
+        "closePrice": "Close",
+        "accumulatedTradingVolume": "Volume",
+    })
+    for col in ("Open", "High", "Low", "Close", "Volume"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["Close"])
 
 
 def fetch_price_history(code: str, days: int = 365) -> pd.DataFrame:
@@ -188,11 +236,27 @@ def _to_clean_list(series: pd.Series, decimals: int = 2) -> list:
     return [None if pd.isna(v) else round(float(v), decimals) for v in series]
 
 
-def calculate_technical_indicators(code: str, days: int = 365, display_days: int = 120) -> dict:
-    """MA(5/20/60/120), RSI(14), MACD(12,26,9), 볼린저밴드(20,2)를 계산합니다."""
-    df = fetch_price_history(code, days=days)
-    name = _resolve_stock_name(code)
+def calculate_technical_indicators(
+    code: str,
+    days: int = 365,
+    display_days: int = 120,
+    is_foreign: bool = None,
+) -> dict:
+    """네이버 차트 API(우선) 또는 FDR로 주가를 받아 MA, RSI, MACD, 볼린저밴드 및 캔들 OHLCV를 계산합니다."""
+    cleaned_code = str(code).strip()
+    if is_foreign is None:
+        is_foreign = not (cleaned_code.isdigit() and len(cleaned_code) == 6)
+
+    try:
+        df = fetch_naver_chart_history(cleaned_code, is_foreign=is_foreign, days=days)
+    except Exception as naver_err:
+        logger.warning("[NAVER-CHART] 네이버 차트 조회 실패, FDR fallback 시도 (%s): %s", cleaned_code, naver_err)
+        fdr_code = cleaned_code.split(".")[0] if is_foreign else cleaned_code
+        df = fetch_price_history(fdr_code, days=days)
+
+    name = _resolve_stock_name(cleaned_code)
     close = df["Close"].astype(float)
+    price_dec = 2 if is_foreign else 0
 
     # 1. 이동평균선
     df["MA5"] = close.rolling(window=5).mean()
@@ -233,14 +297,14 @@ def calculate_technical_indicators(code: str, days: int = 365, display_days: int
 
     latest = {
         "date": last_date,
-        "close": int(round(float(last_row["Close"]))),
-        "ma5": _val("MA5", 0),
-        "ma20": _val("MA20", 0),
-        "ma60": _val("MA60", 0),
-        "ma120": _val("MA120", 0),
-        "bb_upper": _val("BB_UPPER", 0),
-        "bb_mid": _val("MA20", 0),
-        "bb_lower": _val("BB_LOWER", 0),
+        "close": round(float(last_row["Close"]), price_dec) if is_foreign else int(round(float(last_row["Close"]))),
+        "ma5": _val("MA5", price_dec),
+        "ma20": _val("MA20", price_dec),
+        "ma60": _val("MA60", price_dec),
+        "ma120": _val("MA120", price_dec),
+        "bb_upper": _val("BB_UPPER", price_dec),
+        "bb_mid": _val("MA20", price_dec),
+        "bb_lower": _val("BB_LOWER", price_dec),
         "rsi14": _val("RSI14", 2),
         "macd": _val("MACD", 2),
         "macd_signal": _val("MACD_SIGNAL", 2),
@@ -256,23 +320,23 @@ def calculate_technical_indicators(code: str, days: int = 365, display_days: int
         v = float(row["Volume"]) if "Volume" in view.columns and pd.notna(row["Volume"]) else 0.0
         ohlcv.append({
             "time": idx.strftime("%Y-%m-%d"),
-            "open": round(o, 0),
-            "high": round(h, 0),
-            "low": round(l, 0),
-            "close": round(c, 0),
+            "open": round(o, price_dec),
+            "high": round(h, price_dec),
+            "low": round(l, price_dec),
+            "close": round(c, price_dec),
             "volume": round(v, 0),
         })
 
     series = {
         "dates": [idx.strftime("%Y-%m-%d") for idx in view.index],
         "ohlcv": ohlcv,
-        "close": _to_clean_list(view["Close"], 0),
-        "ma5": _to_clean_list(view["MA5"], 0),
-        "ma20": _to_clean_list(view["MA20"], 0),
-        "ma60": _to_clean_list(view["MA60"], 0),
-        "ma120": _to_clean_list(view["MA120"], 0),
-        "bb_upper": _to_clean_list(view["BB_UPPER"], 0),
-        "bb_lower": _to_clean_list(view["BB_LOWER"], 0),
+        "close": _to_clean_list(view["Close"], price_dec),
+        "ma5": _to_clean_list(view["MA5"], price_dec),
+        "ma20": _to_clean_list(view["MA20"], price_dec),
+        "ma60": _to_clean_list(view["MA60"], price_dec),
+        "ma120": _to_clean_list(view["MA120"], price_dec),
+        "bb_upper": _to_clean_list(view["BB_UPPER"], price_dec),
+        "bb_lower": _to_clean_list(view["BB_LOWER"], price_dec),
         "rsi14": _to_clean_list(view["RSI14"], 2),
         "macd": _to_clean_list(view["MACD"], 2),
         "macd_signal": _to_clean_list(view["MACD_SIGNAL"], 2),

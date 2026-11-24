@@ -367,15 +367,31 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function formatPriceByCurrency(val, currency = "KRW") {
+    if (val === null || val === undefined || Number.isNaN(val)) return "-";
+    if (currency === "USD") {
+      return `$${Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return `${Number(val).toLocaleString("ko-KR")}원`;
+  }
+
   function renderTab1Summary(stockData) {
     const snap = stockData.snapshot || {};
     const isEtf = stockData.asset_type === "etf";
+    const isUs = stockData.market_country === "US" || stockData.currency === "USD";
+    const currency = isUs ? "USD" : "KRW";
+
     const badgeEl = document.getElementById("t1AssetBadge");
-    badgeEl.textContent = isEtf ? "ETF" : "주식";
-    badgeEl.className = `asset-badge ${isEtf ? "etf" : "stock"}`;
+    if (isUs) {
+      badgeEl.textContent = isEtf ? "미국 ETF" : "미국 주식";
+      badgeEl.className = "asset-badge us";
+    } else {
+      badgeEl.textContent = isEtf ? "ETF" : "주식";
+      badgeEl.className = `asset-badge ${isEtf ? "etf" : "stock"}`;
+    }
 
     document.getElementById("t1SummaryName").textContent = `${stockData.name} (${stockData.code})`;
-    document.getElementById("t1SummaryPrice").textContent = formatNumber(snap.current_price, "원");
+    document.getElementById("t1SummaryPrice").textContent = formatPriceByCurrency(snap.current_price, currency);
 
     const changeEl = document.getElementById("t1SummaryChange");
     const rate = snap.change_rate;
@@ -392,7 +408,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pos = snap.position_52w;
     if (pos !== null && pos !== undefined) {
       document.getElementById("t1RangeLabel").textContent =
-        `1년(52주) 중 현재 위치: ${pos}% (최저 ${formatNumber(snap.low52)} ~ 최고 ${formatNumber(snap.high52)})`;
+        `1년(52주) 중 현재 위치: ${pos}% (최저 ${formatPriceByCurrency(snap.low52, currency)} ~ 최고 ${formatPriceByCurrency(snap.high52, currency)})`;
       document.getElementById("t1RangeFill").style.width = `${pos}%`;
     } else {
       document.getElementById("t1RangeLabel").textContent = "52주 가격 위치 정보 없음";
@@ -400,7 +416,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let cards = [];
-    if (isEtf) {
+    if (isUs) {
+      const per = snap.per;
+      const perHint =
+        per === null || per === undefined
+          ? "적자이거나 PER 정보 없음"
+          : per < 15
+            ? "미국 시장 평균 대비 저렴한 편"
+            : per <= 30
+              ? "글로벌 대형주 평균 수준"
+              : "높은 미래 성장 기대감이 반영됨";
+
+      const cur = snap.current_price;
+      const tgt = snap.target_price;
+      let upsideStr = "-";
+      let upsideHint = "월가 목표주가 정보 없음";
+      if (cur && tgt) {
+        const up = (((tgt - cur) / cur) * 100).toFixed(1);
+        upsideStr = `${formatPriceByCurrency(tgt, "USD")} (${up > 0 ? "+" : ""}${up}%)`;
+        upsideHint = "월가 애널리스트 평균 목표주가";
+      }
+
+      cards = [
+        { title: "가격 가성비 (PER / PBR)", val: `${formatNumber(per, "배")} / ${formatNumber(snap.pbr, "배")}`, hint: perHint },
+        { title: "월가 목표주가", val: upsideStr, hint: upsideHint },
+        { title: "시가총액 (기업 덩치)", val: snap.market_cap_display || formatMarketCap(snap.market_cap), hint: `${stockData.market || "미국 증시"} 상장` },
+        { title: "1주당 순이익 / 배당", val: `${formatPriceByCurrency(snap.eps, "USD")} / ${snap.dividend_yield ?? "-"}%`, hint: `BPS ${formatPriceByCurrency(snap.bps, "USD")}` },
+      ];
+    } else if (isEtf) {
       const etf = snap.etf_info || {};
       const dev = etf.deviation_rate;
       const devHint =
@@ -518,7 +561,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const pills = [
         `RSI(14) <strong>${tech.rsi14}</strong>`,
         `볼린저 위치 <strong>${tech.bb_position_pct ?? "-"}%</strong>`,
-        `20일선 <strong>${formatNumber(tech.ma20, "원")}</strong>`,
+        `20일선 <strong>${formatPriceByCurrency(tech.ma20, currency)}</strong>`,
         `MACD <strong>${formatNumber(tech.macd)}</strong>`,
       ];
       t1TechStrip.innerHTML = pills.map((p) => `<span class="tech-pill">${p}</span>`).join("");
@@ -566,6 +609,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     t1TvChartInst = chart;
 
+    const isUs = stockData.market_country === "US" || stockData.currency === "USD";
+    const currency = isUs ? "USD" : "KRW";
+
     // 한국 주식 관례: 양봉 빨강, 음봉 파랑
     const candleSeries = chart.addCandlestickSeries({
       upColor: "#ef4444",
@@ -574,6 +620,9 @@ document.addEventListener("DOMContentLoaded", () => {
       borderDownColor: "#3b82f6",
       wickUpColor: "#ef4444",
       wickDownColor: "#3b82f6",
+      priceFormat: isUs
+        ? { type: "price", precision: 2, minMove: 0.01 }
+        : { type: "price", precision: 0, minMove: 1 },
     });
     candleSeries.setData(
       ohlcv.map((d) => ({
@@ -619,8 +668,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const updateLegend = (bar, vol) => {
       if (!bar) return;
       t1TvOhlcvLegend.textContent =
-        `${bar.time} | 시 ${formatNumber(bar.open)} · 고 ${formatNumber(bar.high)} · ` +
-        `저 ${formatNumber(bar.low)} · 종 ${formatNumber(bar.close)} | 거래량 ${formatNumber(vol)}`;
+        `${bar.time} | 시 ${formatPriceByCurrency(bar.open, currency)} · 고 ${formatPriceByCurrency(bar.high, currency)} · ` +
+        `저 ${formatPriceByCurrency(bar.low, currency)} · 종 ${formatPriceByCurrency(bar.close, currency)} | 거래량 ${formatNumber(vol)}`;
     };
     updateLegend(last, last.volume);
 
@@ -686,6 +735,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const s = stockData.tech_series || {};
     const hasPriceSeries = Array.isArray(s.dates) && s.dates.length > 0;
     const isEtf = stockData.asset_type === "etf";
+    const isUs = stockData.market_country === "US" || stockData.currency === "USD";
 
     if (!hasPriceSeries) {
       t1ChartsGrid.classList.add("hidden");
@@ -718,7 +768,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (t1SecondChartInst) t1SecondChartInst.destroy();
     const secondTitleEl = document.getElementById("t1SecondChartTitle");
 
-    if (isEtf) {
+    if (isUs) {
+      const snap = stockData.snapshot || {};
+      secondTitleEl.textContent = "📊 52주 최저 · 현재가 · 목표주가 · 52주 최고 (USD)";
+      const labels = ["52주 최저", "현재가", "월가 목표가", "52주 최고"];
+      const vals = [snap.low52 ?? 0, snap.current_price ?? 0, snap.target_price ?? 0, snap.high52 ?? 0];
+      const colors = ["#94a3b8", "#2563eb", "#10b981", "#ef4444"];
+      t1SecondChartInst = new Chart(document.getElementById("t1SecondChart"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "가격 ($)", data: vals, backgroundColor: colors, borderRadius: 6 }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { ticks: { callback: (v) => `$${v}` } } },
+        },
+      });
+    } else if (isEtf) {
       const etf = (stockData.snapshot || {}).etf_info || {};
       secondTitleEl.textContent = "📊 기간별 수익률 비교 (%)";
       const labels = ["1개월", "3개월", "6개월", "1년"];
@@ -838,7 +907,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (data.stock_data) {
         const s = data.stock_data.snapshot || {};
-        if (data.stock_data.asset_type === "etf") {
+        if (data.stock_data.market_country === "US") {
+          t1ContextBar.textContent =
+            `수집 근거 반영됨: ${data.stock_data.name} (${resolvedCode}, 미국) · 현재가 ${formatPriceByCurrency(s.current_price, "USD")} · ` +
+            `PER ${formatNumber(s.per, "배")} · PBR ${formatNumber(s.pbr, "배")} · 뉴스 ${(data.stock_data.news || []).length}건`;
+        } else if (data.stock_data.asset_type === "etf") {
           const etf = s.etf_info || {};
           t1ContextBar.textContent =
             `수집 근거 반영됨: ${data.stock_data.name} (${resolvedCode}, ETF) · 현재가 ${formatNumber(s.current_price, "원")} · ` +

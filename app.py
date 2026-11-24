@@ -154,8 +154,11 @@ def chat_analysis():
 
         # 탭 1에서도 기술지표(RSI, MACD, 이동평균선, 볼린저밴드 위치%) 및 최근 120일 트레이딩뷰 캔들 데이터 계산
         tech_series = {}
+        is_foreign = stock_data.get("market_country") == "US"
         try:
-            tech_calc = calculate_technical_indicators(code, days=365, display_days=120)
+            tech_calc = calculate_technical_indicators(
+                code, days=365, display_days=120, is_foreign=is_foreign
+            )
             tech_latest = tech_calc.get("latest", {})
             tech_series = tech_calc.get("series", {})
             bb_up = tech_latest.get("bb_upper")
@@ -200,7 +203,27 @@ def chat_analysis():
         asset_type = stock_data.get("asset_type", "stock")
 
         if not question:
-            if asset_type == "etf":
+            if is_foreign:
+                question = (
+                    "당신은 주식을 잘 모르는 초보자에게도 친절하게 설명하는 글로벌/미국 주식 수석 애널리스트입니다. "
+                    f"아래 실시간 수집 데이터(JSON)만을 근거로 미국 종목 {stock_name}({code})에 대한 종합 분석 리포트를 작성해 주세요. "
+                    "(모든 주가·목표주가·EPS·BPS는 미국 달러 USD($) 기준입니다.)\n"
+                    "어려운 금융 용어(PER, PBR, RSI, MACD, 볼린저밴드 등)가 나올 때마다 반드시 괄호 안에 초보자용 쉬운 비유를 붙여주세요.\n\n"
+                    "다음 구조로 깔끔하게 작성해 주세요:\n"
+                    "### 1. 📊 핵심 답변 요약\n"
+                    "- 오늘 미국 종목의 가격 흐름, 52주 내 위치(position_52w%), 핵심 포인트를 3줄 이내로 명쾌하게 요약\n"
+                    "### 2. 🌐 시장 환경 및 핵심 지표\n"
+                    "- 원/달러 환율 및 시가총액(market_cap_display), 거래량, 52주 최고/최저 대비 현재 위치 설명\n"
+                    "### 3. 📈 가격 추이 및 기술지표 분석\n"
+                    "- technical 데이터(20일/60일 이동평균선, RSI14, MACD, 볼린저밴드 위치%)를 바탕으로 단기 과열/저가 구간 여부를 쉽게 설명\n"
+                    "### 4. 📋 밸류에이션 분석 (지금 싼가 비싼가?)\n"
+                    "- 현재 PER, PBR, EPS, BPS 및 월가 애널리스트 평균 목표주가(target_price, 달러) 대비 현재가의 상승 여력(%) 설명\n"
+                    "### 5. 📰 최신 뉴스 모멘텀 및 이슈\n"
+                    "- 제공된 뉴스 5건을 바탕으로 핵심 호재 및 리스크 정리\n"
+                    "### 6. ⚖️ 매수 vs 매도 우위 판단 (직접 결론)\n"
+                    "- 수집된 데이터를 종합해 현재 **[매수 우위 / 중립 / 매도(관망) 우위]** 중 어느 쪽이 유리한지 직접 결론을 내리고, 매수 우위 근거 vs 매도(리스크) 근거를 숫자로 대비해 제시해 주세요."
+                )
+            elif asset_type == "etf":
                 question = (
                     "당신은 주식을 잘 모르는 초보자에게도 친절하게 설명하는 여의도 수석 ETF 애널리스트입니다. "
                     f"아래 실시간 수집 데이터(JSON)만을 근거로 {stock_name}({code}) ETF에 대한 종합 분석 리포트를 작성해 주세요.\n"
