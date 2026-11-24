@@ -1009,3 +1009,47 @@ body {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* 탭 1 리포트 패널 & 챗봇 창 분리 스타일 */
+.market-bar {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.t1-tech-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.tech-pill {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.tech-pill strong {
+  color: #0f172a;
+  margin-left: 4px;
+}
+
+.report-body {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--text-main);
+}
+
+.chat-box.compact {
+  height: 280px;
+}

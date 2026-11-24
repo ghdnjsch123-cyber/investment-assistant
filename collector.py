@@ -381,8 +381,32 @@ def fetch_news(stock_name: str, limit: int = 5) -> list:
     return articles
 
 
+def fetch_market_environment() -> dict:
+    """코스피, 코스닥, 원/달러 환율 현황을 네이버 증권 API로 조회합니다."""
+    env = {}
+    targets = [
+        ("kospi", "https://m.stock.naver.com/api/index/KOSPI/basic", None),
+        ("kosdaq", "https://m.stock.naver.com/api/index/KOSDAQ/basic", None),
+        ("usdkrw", "https://m.stock.naver.com/front-api/marketIndex/productDetail", {"category": "exchange", "reutersCode": "FX_USDKRW"}),
+    ]
+    for key, url, params in targets:
+        try:
+            resp = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=5)
+            if resp.status_code != 200:
+                continue
+            raw = resp.json()
+            data = raw.get("result") if "result" in raw else raw
+            env[key] = {
+                "value": clean_number(data.get("closePrice"), is_float=True),
+                "change_rate": clean_number(data.get("fluctuationsRatio"), is_float=True),
+            }
+        except Exception as e:
+            logger.warning("[NAVER] 시장 지표(%s) 조회 실패: %s", key, e)
+    return env
+
+
 def collect_stock_data(code: str) -> dict:
-    """종목코드를 받아 시세, 밸류에이션, 실적, 뉴스를 통합 수집합니다. (부분 실패 허용)"""
+    """종목코드를 받아 시세, 밸류에이션, 실적, 뉴스, 시장환경을 통합 수집합니다. (부분 실패 허용)"""
     code = validate_stock_code(code)
     result = {
         "code": code,
@@ -392,6 +416,7 @@ def collect_stock_data(code: str) -> dict:
         "snapshot": {},
         "financials": [],
         "news": [],
+        "market_env": {},
         "errors": [],
     }
 
@@ -436,6 +461,12 @@ def collect_stock_data(code: str) -> dict:
     except Exception as e:
         logger.error("[ERROR] 뉴스 수집 실패: %s", e, exc_info=True)
         result["errors"].append({"area": "news", "message": str(e)})
+
+    # 5. 시장 환경(코스피, 코스닥, 원/달러) 조회 (부분 실패 허용)
+    try:
+        result["market_env"] = fetch_market_environment()
+    except Exception as e:
+        logger.warning("[NAVER] 시장 환경 조회 중 오류: %s", e)
 
     return result
 

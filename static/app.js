@@ -307,8 +307,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1SelectForm = document.getElementById("t1SelectForm");
   const t1CodeInput = document.getElementById("t1CodeInput");
   const t1AnalyzeBtn = document.getElementById("t1AnalyzeBtn");
+  const t1LoadingBox = document.getElementById("t1LoadingBox");
+  const t1ReportSection = document.getElementById("t1ReportSection");
+  const t1MarketBar = document.getElementById("t1MarketBar");
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1SummaryCard = document.getElementById("t1SummaryCard");
+  const t1TechStrip = document.getElementById("t1TechStrip");
+  const t1ReportBody = document.getElementById("t1ReportBody");
   const t1ErrorBox = document.getElementById("t1ErrorBox");
   const t1ChatMessages = document.getElementById("t1ChatMessages");
   const t1ChatForm = document.getElementById("t1ChatForm");
@@ -321,14 +326,17 @@ document.addEventListener("DOMContentLoaded", () => {
   let t1LastCode = "";
 
   function resetTab1Chat(
-    notice = "새 대화가 시작되었습니다. 종목을 선택하거나 '종목 분석 시작'을 눌러주세요."
+    notice = "위에서 종목을 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
   ) {
     t1ConversationId = "";
     t1LastCode = "";
     t1ChatMessages.innerHTML = "";
     appendChatBubble(t1ChatMessages, "bot", notice);
+    t1ReportSection.classList.add("hidden");
+    t1ReportBody.innerHTML = "";
     t1ContextBar.classList.add("hidden");
     t1SummaryCard.classList.add("hidden");
+    t1TechStrip.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
   }
 
@@ -478,6 +486,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     t1SummaryCard.classList.remove("hidden");
+
+    // 시장 환경 바 (코스피, 코스닥, 원/달러)
+    const env = stockData.market_env || {};
+    const envParts = [];
+    if (env.kospi) envParts.push(`코스피 ${formatNumber(env.kospi.value)} (${env.kospi.change_rate > 0 ? "+" : ""}${env.kospi.change_rate}%)`);
+    if (env.kosdaq) envParts.push(`코스닥 ${formatNumber(env.kosdaq.value)} (${env.kosdaq.change_rate > 0 ? "+" : ""}${env.kosdaq.change_rate}%)`);
+    if (env.usdkrw) envParts.push(`원/달러 ${formatNumber(env.usdkrw.value)}원`);
+    t1MarketBar.textContent = envParts.join(" · ");
+
+    // 기술지표 미니 배지 스트립 (RSI, 볼린저 위치%, 20일선, MACD)
+    const tech = stockData.technical || {};
+    if (tech.rsi14 !== undefined) {
+      const pills = [
+        `RSI(14) <strong>${tech.rsi14}</strong>`,
+        `볼린저 위치 <strong>${tech.bb_position_pct ?? "-"}%</strong>`,
+        `20일선 <strong>${formatNumber(tech.ma20, "원")}</strong>`,
+        `MACD <strong>${formatNumber(tech.macd)}</strong>`,
+      ];
+      t1TechStrip.innerHTML = pills.map((p) => `<span class="tech-pill">${p}</span>`).join("");
+      t1TechStrip.classList.remove("hidden");
+    } else {
+      t1TechStrip.classList.add("hidden");
+    }
   }
 
   async function sendTab1Request(code, question = "", isInitial = false) {
@@ -493,21 +524,22 @@ document.addEventListener("DOMContentLoaded", () => {
       t1ConversationId = "";
       if (isInitial) {
         t1ChatMessages.innerHTML = "";
+        t1ReportSection.classList.add("hidden");
+        t1ReportBody.innerHTML = "";
         t1ContextBar.classList.add("hidden");
         t1SummaryCard.classList.add("hidden");
+        t1TechStrip.classList.add("hidden");
       }
     }
     t1LastCode = code;
 
-    const userDisplay = isInitial
-      ? `[${code}] 애널리스트 종합 심층 분석 요청`
-      : `[${code}] ${question}`;
-    appendChatBubble(t1ChatMessages, "user", userDisplay);
-
-    const loadingMsg = isInitial
-      ? "실시간 데이터 수집 및 애널리스트 심층 분석 리포트 작성 중..."
-      : "분석된 데이터를 바탕으로 후속 질문 답변 작성 중...";
-    const thinkingBubble = appendChatBubble(t1ChatMessages, "bot", loadingMsg);
+    let thinkingBubble = null;
+    if (isInitial) {
+      t1LoadingBox.classList.remove("hidden");
+    } else {
+      appendChatBubble(t1ChatMessages, "user", `[${code}] ${question}`);
+      thinkingBubble = appendChatBubble(t1ChatMessages, "bot", "분석된 데이터를 바탕으로 후속 질문 답변 작성 중...");
+    }
 
     setTab1Busy(true);
     console.log(`[CHAT]       Dify 챗봇 요청 시작 (tab1, code=${code}, initial=${isInitial})`);
@@ -526,8 +558,19 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error(data.error || "분석 요청에 실패했습니다.");
 
       t1ConversationId = data.conversation_id || t1ConversationId;
-      setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
-      t1ChatMessages.scrollTop = t1ChatMessages.scrollHeight;
+
+      if (isInitial) {
+        setBotFormattedContent(t1ReportBody, data.answer || "응답이 비어 있습니다.");
+        t1ReportSection.classList.remove("hidden");
+        appendChatBubble(
+          t1ChatMessages,
+          "bot",
+          `${data.stock_data?.name || code} 종합 분석 리포트가 위 패널에 완성되었습니다! 리포트 내용 중 궁금한 점을 아래 추천 버튼이나 입력창으로 질문해 주세요.`
+        );
+      } else if (thinkingBubble) {
+        setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
+        t1ChatMessages.scrollTop = t1ChatMessages.scrollHeight;
+      }
 
       if (data.stock_data) {
         const s = data.stock_data.snapshot || {};
@@ -545,11 +588,12 @@ document.addEventListener("DOMContentLoaded", () => {
         renderTab1Summary(data.stock_data);
       }
     } catch (err) {
-      thinkingBubble.textContent = `오류: ${err.message}`;
+      if (thinkingBubble) thinkingBubble.textContent = `오류: ${err.message}`;
       t1ErrorBox.textContent = err.message;
       t1ErrorBox.classList.remove("hidden");
       console.error(`[ERROR]      요청 또는 렌더링 중 오류 발생 (${err.message})`);
     } finally {
+      t1LoadingBox.classList.add("hidden");
       setTab1Busy(false);
       t1QuestionInput.focus();
     }
