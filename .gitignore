@@ -16,3 +16,6 @@ __pycache__/
 
 # 로그 파일
 *.log
+
+# Open DART 캐시 파일
+dart_corp_map.json

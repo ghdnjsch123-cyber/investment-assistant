@@ -1072,3 +1072,43 @@ body {
   color: #0f172a;
   margin-bottom: 10px;
 }
+
+/* Open DART 최근 공시 테이블 */
+.disclosure-card {
+  margin-top: 16px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.disclosure-table td:nth-child(3),
+.disclosure-table th:nth-child(3) {
+  text-align: left;
+  white-space: normal;
+}
+
+.disclosure-table td:nth-child(4),
+.disclosure-table th:nth-child(4) {
+  text-align: center;
+}
+
+.disc-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.disc-link {
+  color: #1e40af;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.disc-link:hover {
+  text-decoration: underline;
+}

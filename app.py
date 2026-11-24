@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from collector import collect_stock_data, validate_stock_code
 from dify_client import ask_dify_chatbot
 from quant_engine import calculate_rebalancing_portfolio, calculate_technical_indicators
+from dart_client import fetch_recent_disclosures
 
 # .env 환경변수 로드
 load_dotenv()
@@ -48,12 +49,14 @@ def health():
     has_gemini_key = _is_key_configured("GEMINI_API_KEY")
     has_dify_analysis = _is_key_configured("DIFY_ANALYSIS_API_KEY")
     has_dify_technical = _is_key_configured("DIFY_TECHNICAL_API_KEY")
+    has_dart_key = _is_key_configured("DART_API_KEY")
 
     logger.info(
-        "[REQUEST] GET /health (serper=%s, dify_analysis=%s, dify_technical=%s)",
+        "[REQUEST] GET /health (serper=%s, dify_analysis=%s, dify_technical=%s, dart=%s)",
         has_serper_key,
         has_dify_analysis,
         has_dify_technical,
+        has_dart_key,
     )
 
     return jsonify({
@@ -63,6 +66,7 @@ def health():
             "gemini_api_configured": has_gemini_key,
             "dify_analysis_configured": has_dify_analysis,
             "dify_technical_configured": has_dify_technical,
+            "dart_api_configured": has_dart_key,
         }
     })
 
@@ -150,6 +154,16 @@ def chat_analysis():
             logger.warning("[QUANT] 탭1 기술지표 보조 계산 실패 (무시하고 진행): %s", tech_err)
             stock_data["technical"] = {}
 
+        # Open DART 최근 90일 주요 공시 조회 (일반 주식일 때)
+        if stock_data.get("asset_type") != "etf":
+            try:
+                stock_data["disclosures"] = fetch_recent_disclosures(code, days=90, limit=8)
+            except Exception as dart_err:
+                logger.warning("[DART] 공시 조회 실패 (무시하고 진행): %s", dart_err)
+                stock_data["disclosures"] = []
+        else:
+            stock_data["disclosures"] = []
+
         stock_json = json.dumps(stock_data, ensure_ascii=False)
         stock_data["tech_series"] = tech_series
         stock_name = stock_data.get("name", "")
@@ -187,8 +201,8 @@ def chat_analysis():
                     "- 52주 위치(position_52w%)와 technical 데이터(20일/60일 이동평균선, RSI14, MACD, 볼린저밴드 위치%)를 바탕으로 단기 흐름과 지지/저항 구간을 쉽게 설명\n"
                     "### 4. 📋 밸류에이션 분석 (지금 싼가 비싼가?)\n"
                     "- 현재 PER vs 추정 PER, PBR·BPS, 증권사 목표주가 대비 현재가의 상승 여력(%)을 초보자도 이해하기 쉽게 설명\n"
-                    "### 5. 📊 재무 건전성 및 최신 뉴스\n"
-                    "- 최근 3~5년 매출·영업이익·ROE·부채비율·영업활동현금흐름 추이(is_consensus가 true면 '추정치(E)' 명시) 및 최신 뉴스 5건 핵심 호재·리스크 정리\n"
+                    "### 5. 📊 재무 건전성 및 최신 공시·뉴스\n"
+                    "- 최근 3~5년 매출·영업이익·ROE·부채비율·영업활동현금흐름 추이(is_consensus가 true면 '추정치(E)' 명시), Open DART 주요 공시(disclosures) 및 최신 뉴스 5건 핵심 호재·리스크 정리\n"
                     "### 6. ⚖️ 매수 vs 매도 우위 판단 (직접 결론)\n"
                     "- 수집된 데이터를 종합해 현재 **[매수 우위 / 중립 / 매도(관망) 우위]** 중 어느 쪽이 유리한지 직접 결론을 내리고, 매수 우위 근거 vs 매도(리스크) 근거를 숫자로 대비해 제시해 주세요."
                 )

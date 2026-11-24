@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!s.serper_api_configured) missing.push("Serper");
         if (!s.dify_analysis_configured) missing.push("Dify분석");
         if (!s.dify_technical_configured) missing.push("Dify지표");
+        if (!s.dart_api_configured) missing.push("DART");
 
         if (missing.length === 0) {
           healthStatusEl.textContent = "서버 정상 (모든 API 연결됨)";
@@ -315,6 +316,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1TechStrip = document.getElementById("t1TechStrip");
   const t1ChartsGrid = document.getElementById("t1ChartsGrid");
   const t1ReportBody = document.getElementById("t1ReportBody");
+  const t1DisclosureCard = document.getElementById("t1DisclosureCard");
+  const t1DisclosureBody = document.getElementById("t1DisclosureBody");
   const t1ErrorBox = document.getElementById("t1ErrorBox");
   const t1ChatMessages = document.getElementById("t1ChatMessages");
   const t1ChatForm = document.getElementById("t1ChatForm");
@@ -341,6 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t1SummaryCard.classList.add("hidden");
     t1TechStrip.classList.add("hidden");
     t1ChartsGrid.classList.add("hidden");
+    t1DisclosureCard.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
   }
 
@@ -515,6 +519,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     renderTab1Charts(stockData);
+    renderTab1Disclosures(stockData);
+  }
+
+  function renderTab1Disclosures(stockData) {
+    const list = stockData.disclosures || [];
+    if (list.length === 0) {
+      t1DisclosureCard.classList.add("hidden");
+      return;
+    }
+
+    t1DisclosureBody.innerHTML = "";
+    list.forEach((item) => {
+      const tr = document.createElement("tr");
+
+      const tdDate = document.createElement("td");
+      tdDate.textContent = item.date || "-";
+
+      const tdCat = document.createElement("td");
+      const badge = document.createElement("span");
+      badge.className = "disc-badge";
+      badge.textContent = item.category || "공시";
+      tdCat.appendChild(badge);
+
+      const tdTitle = document.createElement("td");
+      if (item.url) {
+        const a = document.createElement("a");
+        a.className = "disc-link";
+        a.href = item.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = `${item.title} ↗`;
+        tdTitle.appendChild(a);
+      } else {
+        tdTitle.textContent = item.title || "-";
+      }
+
+      const tdSub = document.createElement("td");
+      tdSub.textContent = item.submitter || "-";
+
+      tr.append(tdDate, tdCat, tdTitle, tdSub);
+      t1DisclosureBody.appendChild(tr);
+    });
+
+    t1DisclosureCard.classList.remove("hidden");
   }
 
   function renderTab1Charts(stockData) {
@@ -619,6 +667,7 @@ document.addEventListener("DOMContentLoaded", () => {
         t1ContextBar.classList.add("hidden");
         t1SummaryCard.classList.add("hidden");
         t1TechStrip.classList.add("hidden");
+        t1DisclosureCard.classList.add("hidden");
       }
     }
     t1LastCode = code;

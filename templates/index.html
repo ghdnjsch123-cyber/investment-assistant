@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -106,6 +106,27 @@
 
         <!-- AI 애널리스트 리포트 본문 -->
         <div id="t1ReportBody" class="report-body"></div>
+
+        <!-- Open DART 최근 주요 공시 표 -->
+        <div id="t1DisclosureCard" class="disclosure-card hidden">
+          <div class="section-header-row">
+            <h4 class="mini-chart-title">📑 최근 주요 공시 (금감원 Open DART, 최근 90일)</h4>
+            <span class="unit-note">제목을 클릭하면 DART 공시 원문으로 이동합니다</span>
+          </div>
+          <div class="table-wrapper">
+            <table class="fin-table disclosure-table">
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>분류</th>
+                  <th>공시 제목</th>
+                  <th>제출인</th>
+                </tr>
+              </thead>
+              <tbody id="t1DisclosureBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- 1-3. 후속 질문 전용 챗봇 대화창 패널 -->
@@ -272,6 +293,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=8"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=9"></script>
 </body>
 </html>
