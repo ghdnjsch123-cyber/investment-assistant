@@ -307,10 +307,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------------
   const t1SelectForm = document.getElementById("t1SelectForm");
   const t1CodeInput = document.getElementById("t1CodeInput");
+  const t1AutocompleteList = document.getElementById("t1AutocompleteList");
   const t1AnalyzeBtn = document.getElementById("t1AnalyzeBtn");
   const t1LoadingBox = document.getElementById("t1LoadingBox");
   const t1ReportSection = document.getElementById("t1ReportSection");
   const t1MarketBar = document.getElementById("t1MarketBar");
+  const t1TradingViewCard = document.getElementById("t1TradingViewCard");
+  const t1TvTitle = document.getElementById("t1TvTitle");
+  const t1TvOhlcvLegend = document.getElementById("t1TvOhlcvLegend");
+  const t1TvChartContainer = document.getElementById("t1TvChartContainer");
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1SummaryCard = document.getElementById("t1SummaryCard");
   const t1TechStrip = document.getElementById("t1TechStrip");
@@ -330,15 +335,18 @@ document.addEventListener("DOMContentLoaded", () => {
   let t1LastCode = "";
   let t1PriceChartInst = null;
   let t1SecondChartInst = null;
+  let t1TvChartInst = null;
+  let acTimer = null;
 
   function resetTab1Chat(
-    notice = "위에서 종목을 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
+    notice = "위에서 종목명이나 코드를 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
   ) {
     t1ConversationId = "";
     t1LastCode = "";
     t1ChatMessages.innerHTML = "";
     appendChatBubble(t1ChatMessages, "bot", notice);
     t1ReportSection.classList.add("hidden");
+    t1TradingViewCard.classList.add("hidden");
     t1ReportBody.innerHTML = "";
     t1ContextBar.classList.add("hidden");
     t1SummaryCard.classList.add("hidden");
@@ -346,6 +354,7 @@ document.addEventListener("DOMContentLoaded", () => {
     t1ChartsGrid.classList.add("hidden");
     t1DisclosureCard.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
+    t1AutocompleteList.classList.add("hidden");
   }
 
   function setTab1Busy(isBusy) {
@@ -520,6 +529,114 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderTab1Charts(stockData);
     renderTab1Disclosures(stockData);
+    renderTradingViewChart(stockData);
+  }
+
+  function renderTradingViewChart(stockData) {
+    const s = stockData.tech_series || {};
+    const ohlcv = s.ohlcv || [];
+    if (!window.LightweightCharts || ohlcv.length === 0) {
+      t1TradingViewCard.classList.add("hidden");
+      return;
+    }
+
+    t1TradingViewCard.classList.remove("hidden");
+    t1TvTitle.textContent = `📈 ${stockData.name} (${stockData.code}) 실시간 캔들 · 거래량 차트 (TradingView)`;
+
+    if (t1TvChartInst) {
+      t1TvChartInst.remove();
+      t1TvChartInst = null;
+    }
+    t1TvChartContainer.innerHTML = "";
+
+    const chart = LightweightCharts.createChart(t1TvChartContainer, {
+      width: t1TvChartContainer.clientWidth || 800,
+      height: 360,
+      layout: {
+        background: { color: "#ffffff" },
+        textColor: "#334155",
+      },
+      grid: {
+        vertLines: { color: "#f1f5f9" },
+        horzLines: { color: "#f1f5f9" },
+      },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#cbd5e1" },
+      timeScale: { borderColor: "#cbd5e1", timeVisible: true },
+    });
+    t1TvChartInst = chart;
+
+    // 한국 주식 관례: 양봉 빨강, 음봉 파랑
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: "#ef4444",
+      downColor: "#3b82f6",
+      borderUpColor: "#ef4444",
+      borderDownColor: "#3b82f6",
+      wickUpColor: "#ef4444",
+      wickDownColor: "#3b82f6",
+    });
+    candleSeries.setData(
+      ohlcv.map((d) => ({
+        time: d.time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }))
+    );
+
+    // 20일 이동평균선 & 60일 이동평균선 오버레이
+    const dates = s.dates || [];
+    const buildLine = (arr) =>
+      dates
+        .map((t, i) => (arr && arr[i] !== null && arr[i] !== undefined ? { time: t, value: arr[i] } : null))
+        .filter(Boolean);
+
+    const ma20Series = chart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "MA20" });
+    ma20Series.setData(buildLine(s.ma20));
+
+    const ma60Series = chart.addLineSeries({ color: "#10b981", lineWidth: 1.5, title: "MA60" });
+    ma60Series.setData(buildLine(s.ma60));
+
+    // 하단 거래량 히스토그램
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+    volumeSeries.setData(
+      ohlcv.map((d) => ({
+        time: d.time,
+        value: d.volume,
+        color: d.close >= d.open ? "rgba(239, 68, 68, 0.35)" : "rgba(59, 130, 246, 0.35)",
+      }))
+    );
+
+    // 크로스헤어 이동 시 OHLCV 범례 업데이트
+    const last = ohlcv[ohlcv.length - 1];
+    const updateLegend = (bar, vol) => {
+      if (!bar) return;
+      t1TvOhlcvLegend.textContent =
+        `${bar.time} | 시 ${formatNumber(bar.open)} · 고 ${formatNumber(bar.high)} · ` +
+        `저 ${formatNumber(bar.low)} · 종 ${formatNumber(bar.close)} | 거래량 ${formatNumber(vol)}`;
+    };
+    updateLegend(last, last.volume);
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.time) {
+        updateLegend(last, last.volume);
+        return;
+      }
+      const cData = param.seriesData.get(candleSeries);
+      const vData = param.seriesData.get(volumeSeries);
+      if (cData) {
+        updateLegend({ ...cData, time: param.time }, vData ? vData.value : 0);
+      }
+    });
+
+    chart.timeScale().fitContent();
   }
 
   function renderTab1Disclosures(stockData) {
@@ -649,46 +766,49 @@ document.addEventListener("DOMContentLoaded", () => {
     t1ChartsGrid.classList.remove("hidden");
   }
 
-  async function sendTab1Request(code, question = "", isInitial = false) {
-    if (!/^\d{6}$/.test(code)) {
-      t1ErrorBox.textContent = "종목코드는 6자리 숫자여야 합니다. (예: 000660)";
+  async function sendTab1Request(rawInput, question = "", isInitial = false) {
+    const codeOrName = (rawInput || "").trim();
+    if (!codeOrName) {
+      t1ErrorBox.textContent = "종목명 또는 6자리 종목코드를 입력해 주세요. (예: 삼성전자, 000660)";
       t1ErrorBox.classList.remove("hidden");
       return;
     }
 
+    t1AutocompleteList.classList.add("hidden");
     t1ErrorBox.classList.add("hidden");
 
-    if (isInitial || (t1LastCode && t1LastCode !== code)) {
+    if (isInitial || (t1LastCode && t1LastCode !== codeOrName)) {
       t1ConversationId = "";
       if (isInitial) {
         t1ChatMessages.innerHTML = "";
         t1ReportSection.classList.add("hidden");
+        t1TradingViewCard.classList.add("hidden");
         t1ReportBody.innerHTML = "";
         t1ContextBar.classList.add("hidden");
         t1SummaryCard.classList.add("hidden");
         t1TechStrip.classList.add("hidden");
+        t1ChartsGrid.classList.add("hidden");
         t1DisclosureCard.classList.add("hidden");
       }
     }
-    t1LastCode = code;
 
     let thinkingBubble = null;
     if (isInitial) {
       t1LoadingBox.classList.remove("hidden");
     } else {
-      appendChatBubble(t1ChatMessages, "user", `[${code}] ${question}`);
+      appendChatBubble(t1ChatMessages, "user", `[${t1LastCode || codeOrName}] ${question}`);
       thinkingBubble = appendChatBubble(t1ChatMessages, "bot", "분석된 데이터를 바탕으로 후속 질문 답변 작성 중...");
     }
 
     setTab1Busy(true);
-    console.log(`[CHAT]       Dify 챗봇 요청 시작 (tab1, code=${code}, initial=${isInitial})`);
+    console.log(`[CHAT]       Dify 챗봇 요청 시작 (tab1, input=${codeOrName}, initial=${isInitial})`);
 
     try {
       const res = await fetch("/api/chat/analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          code,
+          code: codeOrName,
           question,
           conversation_id: t1ConversationId,
         }),
@@ -697,6 +817,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error(data.error || "분석 요청에 실패했습니다.");
 
       t1ConversationId = data.conversation_id || t1ConversationId;
+      const resolvedCode = data.stock_data?.code || codeOrName;
+      t1LastCode = resolvedCode;
+      if (data.stock_data?.code) {
+        t1CodeInput.value = resolvedCode;
+      }
 
       if (isInitial) {
         setBotFormattedContent(t1ReportBody, data.answer || "응답이 비어 있습니다.");
@@ -704,7 +829,7 @@ document.addEventListener("DOMContentLoaded", () => {
         appendChatBubble(
           t1ChatMessages,
           "bot",
-          `${data.stock_data?.name || code} 종합 분석 리포트가 위 패널에 완성되었습니다! 리포트 내용 중 궁금한 점을 아래 추천 버튼이나 입력창으로 질문해 주세요.`
+          `${data.stock_data?.name || resolvedCode} 종합 분석 리포트가 위 패널에 완성되었습니다! 리포트 내용 중 궁금한 점을 아래 추천 버튼이나 입력창으로 질문해 주세요.`
         );
       } else if (thinkingBubble) {
         setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
@@ -716,11 +841,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.stock_data.asset_type === "etf") {
           const etf = s.etf_info || {};
           t1ContextBar.textContent =
-            `수집 근거 반영됨: ${data.stock_data.name} (${code}, ETF) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+            `수집 근거 반영됨: ${data.stock_data.name} (${resolvedCode}, ETF) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
             `기초지수 ${etf.base_index || "-"} · 총보수 ${etf.total_fee ?? "-"}% · 뉴스 ${(data.stock_data.news || []).length}건`;
         } else {
           t1ContextBar.textContent =
-            `수집 근거 반영됨: ${data.stock_data.name} (${code}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+            `수집 근거 반영됨: ${data.stock_data.name} (${resolvedCode}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
             `PER ${formatNumber(s.per, "배")} · PBR ${formatNumber(s.pbr, "배")} · 뉴스 ${(data.stock_data.news || []).length}건`;
         }
         t1ContextBar.classList.remove("hidden");
@@ -740,7 +865,51 @@ document.addEventListener("DOMContentLoaded", () => {
 
   t1ResetBtn.addEventListener("click", () => resetTab1Chat());
 
-  // 1) 종목 분석 시작 버튼 또는 코드 입력 후 엔터 -> 즉시 1차 종합 분석 실행
+  // 0) 종목명/코드 자동완성
+  t1CodeInput.addEventListener("input", () => {
+    const q = t1CodeInput.value.trim();
+    if (acTimer) clearTimeout(acTimer);
+    if (!q || /^\d{6}$/.test(q)) {
+      t1AutocompleteList.classList.add("hidden");
+      return;
+    }
+
+    acTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const items = data.results || [];
+        t1AutocompleteList.innerHTML = "";
+        if (items.length === 0) {
+          t1AutocompleteList.classList.add("hidden");
+          return;
+        }
+        items.forEach((item) => {
+          const li = document.createElement("li");
+          li.className = "autocomplete-item";
+          li.innerHTML = `<span class="ac-name">${item.name}</span><span class="ac-meta">${item.code} · ${item.type}</span>`;
+          li.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            t1CodeInput.value = item.code;
+            t1AutocompleteList.classList.add("hidden");
+            sendTab1Request(item.code, "", true);
+          });
+          t1AutocompleteList.appendChild(li);
+        });
+        t1AutocompleteList.classList.remove("hidden");
+      } catch (err) {
+        t1AutocompleteList.classList.add("hidden");
+      }
+    }, 150);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".autocomplete-wrap")) {
+      t1AutocompleteList.classList.add("hidden");
+    }
+  });
+
+  // 1) 종목 분석 시작 버튼 또는 코드/이름 입력 후 엔터 -> 즉시 1차 종합 분석 실행
   t1SelectForm.addEventListener("submit", (e) => {
     e.preventDefault();
     sendTab1Request(t1CodeInput.value.trim(), "", true);

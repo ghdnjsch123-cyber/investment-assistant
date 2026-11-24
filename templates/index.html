@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=10" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
   <div class="container">
@@ -42,7 +43,10 @@
         </div>
 
         <form id="t1SelectForm" class="input-row">
-          <input type="text" id="t1CodeInput" maxlength="6" placeholder="6자리 종목코드 (예: 000660)" value="000660" required />
+          <div class="autocomplete-wrap">
+            <input type="text" id="t1CodeInput" placeholder="종목명 또는 코드 입력 (예: 삼성, KODEX, 000660)" value="000660" autocomplete="off" required />
+            <ul id="t1AutocompleteList" class="autocomplete-list hidden"></ul>
+          </div>
           <button type="submit" id="t1AnalyzeBtn" class="primary-small-btn">종목 분석 시작</button>
           <div class="quick-examples inline">
             <button type="button" class="chip-btn t1-chip" data-code="000660">000660 SK하이닉스</button>
@@ -64,6 +68,15 @@
         <div class="section-header-row">
           <h3 class="section-title">📑 종합 분석 리포트</h3>
           <span id="t1MarketBar" class="market-bar"></span>
+        </div>
+
+        <!-- 최상단 트레이딩뷰 스타일 실시간 캔들 차트 -->
+        <div id="t1TradingViewCard" class="tv-chart-card hidden">
+          <div class="tv-chart-header">
+            <span id="t1TvTitle" class="tv-chart-title">📈 실시간 일봉 캔들 · 거래량 차트 (TradingView Style)</span>
+            <span id="t1TvOhlcvLegend" class="tv-ohlcv-legend">차트 위에 마우스를 올리면 시가·고가·저가·종가·거래량이 표시됩니다</span>
+          </div>
+          <div id="t1TvChartContainer" class="tv-chart-container"></div>
         </div>
 
         <div id="t1ContextBar" class="context-bar hidden"></div>
@@ -293,6 +306,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=9"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=10"></script>
 </body>
 </html>

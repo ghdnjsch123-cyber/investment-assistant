@@ -142,6 +142,94 @@ def fetch_recent_disclosures(stock_code: str, days: int = 90, limit: int = 10) -
     return disclosures
 
 
+_CATALOG_CACHE = None
+
+
+def _get_stock_catalog() -> list:
+    """국내 상장 주식(Open DART) + 국내 ETF(FinanceDataReader) 통합 검색 카탈로그를 로드합니다."""
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is not None:
+        return _CATALOG_CACHE
+
+    catalog_map = {}
+
+    # 1. Open DART 상장사 캐시 (주식)
+    try:
+        api_key = os.getenv("DART_API_KEY", "").strip()
+        if api_key and not api_key.startswith("your_"):
+            corp_map = _load_or_refresh_corp_map(api_key)
+            for code, info in corp_map.items():
+                catalog_map[code] = {
+                    "code": code,
+                    "name": info.get("corp_name", ""),
+                    "type": "주식",
+                }
+    except Exception as e:
+        logger.warning("[SEARCH] DART 카탈로그 로드 실패: %s", e)
+
+    # 2. FinanceDataReader ETF 목록
+    try:
+        import FinanceDataReader as fdr
+        etf_df = fdr.StockListing("ETF/KR")
+        if etf_df is not None and not etf_df.empty:
+            for _, row in etf_df.iterrows():
+                code = str(row.get("Symbol", "")).strip()
+                name = str(row.get("Name", "")).strip()
+                if code and name:
+                    catalog_map[code] = {
+                        "code": code,
+                        "name": name,
+                        "type": "ETF",
+                    }
+    except Exception as e:
+        logger.warning("[SEARCH] FDR ETF 목록 로드 실패: %s", e)
+
+    _CATALOG_CACHE = list(catalog_map.values())
+    logger.info("[SEARCH] 통합 종목 검색 카탈로그 준비 완료 (총 %d개 종목/ETF)", len(_CATALOG_CACHE))
+    return _CATALOG_CACHE
+
+
+def search_stock_catalog(query: str, limit: int = 10) -> list:
+    """종목명 또는 종목코드 일부로 자동완성 후보 목록을 검색합니다."""
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    q_lower = q.lower()
+    catalog = _get_stock_catalog()
+
+    exact_matches = []
+    prefix_matches = []
+    contains_matches = []
+
+    for item in catalog:
+        name_lower = item["name"].lower()
+        code_lower = item["code"].lower()
+        if name_lower == q_lower or code_lower == q_lower:
+            exact_matches.append(item)
+        elif name_lower.startswith(q_lower) or code_lower.startswith(q_lower):
+            prefix_matches.append(item)
+        elif q_lower in name_lower or q_lower in code_lower:
+            contains_matches.append(item)
+
+    prefix_matches.sort(key=lambda x: len(x["name"]))
+    contains_matches.sort(key=lambda x: len(x["name"]))
+
+    return (exact_matches + prefix_matches + contains_matches)[:limit]
+
+
+def resolve_stock_code(query_or_code: str) -> str:
+    """입력값이 6자리 코드면 그대로 반환하고, 종목명이면 가장 일치하는 6자리 코드를 찾아 반환합니다."""
+    cleaned = (query_or_code or "").strip()
+    if cleaned.isdigit() and len(cleaned) == 6:
+        return cleaned
+
+    matches = search_stock_catalog(cleaned, limit=1)
+    if matches:
+        return matches[0]["code"]
+    return cleaned
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     res = fetch_recent_disclosures("005930", days=90, limit=5)

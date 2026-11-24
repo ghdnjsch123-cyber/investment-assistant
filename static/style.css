@@ -1112,3 +1112,91 @@ body {
 .disc-link:hover {
   text-decoration: underline;
 }
+
+/* 종목명/코드 자동완성 드롭다운 */
+.autocomplete-wrap {
+  position: relative;
+  width: 280px;
+}
+
+.autocomplete-wrap input {
+  width: 100%;
+}
+
+.autocomplete-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.autocomplete-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-item:hover {
+  background: #eff6ff;
+}
+
+.ac-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.ac-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* 트레이딩뷰 스타일 실시간 캔들 차트 */
+.tv-chart-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.tv-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tv-chart-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tv-ohlcv-legend {
+  font-size: 0.8rem;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.tv-chart-container {
+  width: 100%;
+  height: 360px;
+}

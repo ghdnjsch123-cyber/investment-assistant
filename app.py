@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from collector import collect_stock_data, validate_stock_code
 from dify_client import ask_dify_chatbot
 from quant_engine import calculate_rebalancing_portfolio, calculate_technical_indicators
-from dart_client import fetch_recent_disclosures
+from dart_client import fetch_recent_disclosures, search_stock_catalog, resolve_stock_code
 
 # .env 환경변수 로드
 load_dotenv()
@@ -100,15 +100,30 @@ def fetch_stock():
         return jsonify({"error": "데이터 수집 중 서버 내부 오류가 발생했습니다."}), 500
 
 
+@app.route("/api/search", methods=["GET"])
+def search_stocks():
+    """종목명 또는 코드 일부로 자동완성 후보 목록을 반환합니다."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"results": []}), 200
+    try:
+        results = search_stock_catalog(q, limit=10)
+        return jsonify({"results": results}), 200
+    except Exception as e:
+        logger.error("[ERROR] /api/search 실패: %s", e)
+        return jsonify({"results": []}), 200
+
+
 @app.route("/api/chat/analysis", methods=["POST"])
 def chat_analysis():
-    """[탭1] 종목코드로 수집기(collector.py) 실행 후 Dify 일반 챗봇 ①에 근거 JSON을 전달해 전문가 분석을 받고, 이후 후속 질문을 이어갑니다."""
+    """[탭1] 종목코드 또는 종목명으로 수집기 실행 후 Dify 일반 챗봇 ①에 근거 JSON을 전달합니다."""
     payload = request.get_json(silent=True) or {}
-    raw_code = payload.get("code", "")
+    raw_input = (payload.get("code") or "").strip()
+    raw_code = resolve_stock_code(raw_input)
     question = (payload.get("question") or "").strip()
     conversation_id = (payload.get("conversation_id") or "").strip()
 
-    logger.info("[REQUEST] POST /api/chat/analysis code=%s (followup=%s)", raw_code, bool(conversation_id))
+    logger.info("[REQUEST] POST /api/chat/analysis input=%s -> code=%s (followup=%s)", raw_input, raw_code, bool(conversation_id))
 
     try:
         code = validate_stock_code(raw_code)
@@ -137,10 +152,10 @@ def chat_analysis():
             err_msg = stock_data["errors"][0]["message"] if stock_data.get("errors") else "종목 기본 정보를 가져오지 못했습니다."
             return jsonify({"error": err_msg}), 400
 
-        # 탭 1에서도 기술지표(RSI, MACD, 이동평균선, 볼린저밴드 위치%) 및 최근 60일 차트 데이터 함께 계산
+        # 탭 1에서도 기술지표(RSI, MACD, 이동평균선, 볼린저밴드 위치%) 및 최근 120일 트레이딩뷰 캔들 데이터 계산
         tech_series = {}
         try:
-            tech_calc = calculate_technical_indicators(code, days=365, display_days=60)
+            tech_calc = calculate_technical_indicators(code, days=365, display_days=120)
             tech_latest = tech_calc.get("latest", {})
             tech_series = tech_calc.get("series", {})
             bb_up = tech_latest.get("bb_upper")
@@ -150,6 +165,21 @@ def chat_analysis():
                 bb_pos = ((close_p - bb_lo) / (bb_up - bb_lo)) * 100.0
                 tech_latest["bb_position_pct"] = round(max(0.0, min(100.0, bb_pos)), 1)
             stock_data["technical"] = tech_latest
+
+            # 네이버 실시간 시세(현재가·시가·고가·저가·거래량)가 있으면 마지막 캔들에 실시간 반영
+            snap = stock_data.get("snapshot") or {}
+            ohlcv = tech_series.get("ohlcv") or []
+            if ohlcv and snap.get("current_price"):
+                last_candle = ohlcv[-1]
+                last_candle["close"] = snap["current_price"]
+                if snap.get("open_price"):
+                    last_candle["open"] = snap["open_price"]
+                if snap.get("high_price"):
+                    last_candle["high"] = snap["high_price"]
+                if snap.get("low_price"):
+                    last_candle["low"] = snap["low_price"]
+                if snap.get("volume"):
+                    last_candle["volume"] = snap["volume"]
         except Exception as tech_err:
             logger.warning("[QUANT] 탭1 기술지표 보조 계산 실패 (무시하고 진행): %s", tech_err)
             stock_data["technical"] = {}

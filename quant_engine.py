@@ -247,8 +247,25 @@ def calculate_technical_indicators(code: str, days: int = 365, display_days: int
         "macd_hist": _val("MACD_HIST", 2),
     }
 
+    ohlcv = []
+    for idx, row in view.iterrows():
+        c = float(row["Close"])
+        o = float(row["Open"]) if "Open" in view.columns and pd.notna(row["Open"]) and float(row["Open"]) > 0 else c
+        h = float(row["High"]) if "High" in view.columns and pd.notna(row["High"]) and float(row["High"]) > 0 else max(o, c)
+        l = float(row["Low"]) if "Low" in view.columns and pd.notna(row["Low"]) and float(row["Low"]) > 0 else min(o, c)
+        v = float(row["Volume"]) if "Volume" in view.columns and pd.notna(row["Volume"]) else 0.0
+        ohlcv.append({
+            "time": idx.strftime("%Y-%m-%d"),
+            "open": round(o, 0),
+            "high": round(h, 0),
+            "low": round(l, 0),
+            "close": round(c, 0),
+            "volume": round(v, 0),
+        })
+
     series = {
         "dates": [idx.strftime("%Y-%m-%d") for idx in view.index],
+        "ohlcv": ohlcv,
         "close": _to_clean_list(view["Close"], 0),
         "ma5": _to_clean_list(view["MA5"], 0),
         "ma20": _to_clean_list(view["MA20"], 0),
