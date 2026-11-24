@@ -5,7 +5,11 @@ from flask import Flask, jsonify, render_template, request
 from dotenv import load_dotenv
 from collector import collect_stock_data, validate_stock_code
 from dify_client import ask_dify_chatbot
-from quant_engine import calculate_rebalancing_portfolio, calculate_technical_indicators
+from quant_engine import (
+    calculate_rebalancing_portfolio,
+    calculate_technical_indicators,
+    fetch_naver_chart_with_indicators,
+)
 from dart_client import fetch_recent_disclosures, search_stock_catalog, resolve_stock_code
 
 # .env 환경변수 로드
@@ -112,6 +116,27 @@ def search_stocks():
     except Exception as e:
         logger.error("[ERROR] /api/search 실패: %s", e)
         return jsonify({"results": []}), 200
+
+
+@app.route("/api/chart/naver", methods=["POST"])
+def naver_timeframe_chart():
+    """네이버 증권 차트 API에서 분봉(1/5/10/30/60분)·일·주·월봉 OHLCV 및 지표를 반환합니다."""
+    payload = request.get_json(silent=True) or {}
+    raw_input = (payload.get("code") or "").strip()
+    timeframe = (payload.get("timeframe") or "day").strip()
+    code = resolve_stock_code(raw_input)
+
+    logger.info("[REQUEST] POST /api/chart/naver code=%s, timeframe=%s", code, timeframe)
+
+    try:
+        validated = validate_stock_code(code)
+        chart_data = fetch_naver_chart_with_indicators(validated, timeframe=timeframe)
+        return jsonify(chart_data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error("[ERROR] /api/chart/naver 실패: %s", e, exc_info=True)
+        return jsonify({"error": "차트 데이터를 불러오는 중 오류가 발생했습니다."}), 500
 
 
 @app.route("/api/chat/analysis", methods=["POST"])

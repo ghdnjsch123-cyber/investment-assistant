@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=12" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -71,13 +71,44 @@
           <span id="t1MarketBar" class="market-bar"></span>
         </div>
 
-        <!-- 최상단 트레이딩뷰 스타일 실시간 캔들 차트 -->
+        <!-- 최상단 트레이딩뷰 스타일 실시간 캔들 차트 (분봉/일/주/월봉 + 지표 선택) -->
         <div id="t1TradingViewCard" class="tv-chart-card hidden">
           <div class="tv-chart-header">
-            <span id="t1TvTitle" class="tv-chart-title">📈 실시간 일봉 캔들 · 거래량 차트 (TradingView Style)</span>
+            <span id="t1TvTitle" class="tv-chart-title">📈 실시간 캔들 · 거래량 차트 (네이버 증권)</span>
             <span id="t1TvOhlcvLegend" class="tv-ohlcv-legend">차트 위에 마우스를 올리면 시가·고가·저가·종가·거래량이 표시됩니다</span>
           </div>
+
+          <div class="tv-toolbar">
+            <div class="tv-tf-group" id="t1TfGroup">
+              <button type="button" class="tv-tf-btn" data-tf="minute1">1분</button>
+              <button type="button" class="tv-tf-btn" data-tf="minute5">5분</button>
+              <button type="button" class="tv-tf-btn" data-tf="minute10">10분</button>
+              <button type="button" class="tv-tf-btn" data-tf="minute30">30분</button>
+              <button type="button" class="tv-tf-btn" data-tf="minute60">60분</button>
+              <button type="button" class="tv-tf-btn active" data-tf="day">일봉</button>
+              <button type="button" class="tv-tf-btn" data-tf="week">주봉</button>
+              <button type="button" class="tv-tf-btn" data-tf="month">월봉</button>
+            </div>
+            <div class="tv-ind-group">
+              <label class="tv-ind-toggle"><input type="checkbox" id="indMa5" /> MA5</label>
+              <label class="tv-ind-toggle"><input type="checkbox" id="indMa20" checked /> MA20</label>
+              <label class="tv-ind-toggle"><input type="checkbox" id="indMa60" checked /> MA60</label>
+              <label class="tv-ind-toggle"><input type="checkbox" id="indBb" /> 볼린저밴드</label>
+              <label class="tv-ind-toggle"><input type="checkbox" id="indRsi" /> RSI(14)</label>
+              <label class="tv-ind-toggle"><input type="checkbox" id="indMacd" /> MACD</label>
+            </div>
+          </div>
+
+          <div id="t1TvNotice" class="tv-notice hidden"></div>
           <div id="t1TvChartContainer" class="tv-chart-container"></div>
+          <div id="t1TvRsiWrap" class="tv-subchart-wrap hidden">
+            <div class="tv-subchart-label">RSI (14일)</div>
+            <div id="t1TvRsiContainer" class="tv-subchart-container"></div>
+          </div>
+          <div id="t1TvMacdWrap" class="tv-subchart-wrap hidden">
+            <div class="tv-subchart-label">MACD (12, 26, 9)</div>
+            <div id="t1TvMacdContainer" class="tv-subchart-container"></div>
+          </div>
         </div>
 
         <div id="t1ContextBar" class="context-bar hidden"></div>
@@ -307,6 +338,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=11"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=12"></script>
 </body>
 </html>

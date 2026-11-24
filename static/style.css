@@ -1215,3 +1215,91 @@ body {
   background: #d1fae5;
   color: #065f46;
 }
+
+/* 트레이딩뷰 차트 툴바 & 보조지표 패널 */
+.tv-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.tv-tf-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tv-tf-btn {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tv-tf-btn:hover {
+  background: #f1f5f9;
+}
+
+.tv-tf-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.tv-ind-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.tv-ind-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tv-notice {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.tv-subchart-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.tv-subchart-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.tv-subchart-container {
+  width: 100%;
+  height: 130px;
+}

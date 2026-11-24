@@ -316,6 +316,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const t1TvTitle = document.getElementById("t1TvTitle");
   const t1TvOhlcvLegend = document.getElementById("t1TvOhlcvLegend");
   const t1TvChartContainer = document.getElementById("t1TvChartContainer");
+  const t1TvNotice = document.getElementById("t1TvNotice");
+  const t1TvRsiWrap = document.getElementById("t1TvRsiWrap");
+  const t1TvRsiContainer = document.getElementById("t1TvRsiContainer");
+  const t1TvMacdWrap = document.getElementById("t1TvMacdWrap");
+  const t1TvMacdContainer = document.getElementById("t1TvMacdContainer");
+  const tvTfBtns = document.querySelectorAll(".tv-tf-btn");
+  const indMa5 = document.getElementById("indMa5");
+  const indMa20 = document.getElementById("indMa20");
+  const indMa60 = document.getElementById("indMa60");
+  const indBb = document.getElementById("indBb");
+  const indRsi = document.getElementById("indRsi");
+  const indMacd = document.getElementById("indMacd");
   const t1ContextBar = document.getElementById("t1ContextBar");
   const t1SummaryCard = document.getElementById("t1SummaryCard");
   const t1TechStrip = document.getElementById("t1TechStrip");
@@ -336,6 +348,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let t1PriceChartInst = null;
   let t1SecondChartInst = null;
   let t1TvChartInst = null;
+  let t1TvRsiInst = null;
+  let t1TvMacdInst = null;
+  let t1CurrentStockMeta = null;
+  let t1CurrentChartData = null;
   let acTimer = null;
 
   function resetTab1Chat(
@@ -583,36 +599,75 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const isUs = stockData.market_country === "US" || stockData.currency === "USD";
+    t1CurrentStockMeta = {
+      code: stockData.code,
+      name: stockData.name,
+      isUs,
+      currency: isUs ? "USD" : "KRW",
+    };
+
+    const dates = s.dates || [];
+    const buildPairs = (arr) =>
+      dates
+        .map((t, i) => (arr && arr[i] !== null && arr[i] !== undefined ? { time: t, value: arr[i] } : null))
+        .filter(Boolean);
+
+    t1CurrentChartData = {
+      code: stockData.code,
+      timeframe: "day",
+      is_minute: false,
+      is_foreign: isUs,
+      ohlcv: ohlcv.map((d) => ({ ...d, label: d.time })),
+      ma5: buildPairs(s.ma5),
+      ma20: buildPairs(s.ma20),
+      ma60: buildPairs(s.ma60),
+      bb_upper: buildPairs(s.bb_upper),
+      bb_lower: buildPairs(s.bb_lower),
+      rsi14: buildPairs(s.rsi14),
+      macd: buildPairs(s.macd),
+      macd_signal: buildPairs(s.macd_signal),
+      macd_hist: buildPairs(s.macd_hist),
+    };
+
+    tvTfBtns.forEach((b) => b.classList.toggle("active", b.dataset.tf === "day"));
+    t1TvNotice.classList.add("hidden");
     t1TradingViewCard.classList.remove("hidden");
-    t1TvTitle.textContent = `📈 ${stockData.name} (${stockData.code}) 실시간 캔들 · 거래량 차트 (TradingView)`;
+    drawTvChartFromData(t1CurrentChartData);
+  }
 
-    if (t1TvChartInst) {
-      t1TvChartInst.remove();
-      t1TvChartInst = null;
+  function drawTvChartFromData(chartData) {
+    if (!window.LightweightCharts || !chartData || !chartData.ohlcv || chartData.ohlcv.length === 0) {
+      return;
     }
-    t1TvChartContainer.innerHTML = "";
 
+    const meta = t1CurrentStockMeta || { code: chartData.code, name: chartData.code, isUs: chartData.is_foreign, currency: chartData.is_foreign ? "USD" : "KRW" };
+    const isUs = meta.isUs;
+    const currency = meta.currency;
+    const ohlcv = chartData.ohlcv;
+
+    t1TvTitle.textContent = `📈 ${meta.name} (${meta.code}) 실시간 캔들 · 거래량 차트 (${chartData.timeframe})`;
+
+    if (t1TvChartInst) { t1TvChartInst.remove(); t1TvChartInst = null; }
+    if (t1TvRsiInst) { t1TvRsiInst.remove(); t1TvRsiInst = null; }
+    if (t1TvMacdInst) { t1TvMacdInst.remove(); t1TvMacdInst = null; }
+
+    t1TvChartContainer.innerHTML = "";
+    t1TvRsiContainer.innerHTML = "";
+    t1TvMacdContainer.innerHTML = "";
+
+    const chartWidth = t1TvChartContainer.clientWidth || 800;
     const chart = LightweightCharts.createChart(t1TvChartContainer, {
-      width: t1TvChartContainer.clientWidth || 800,
+      width: chartWidth,
       height: 360,
-      layout: {
-        background: { color: "#ffffff" },
-        textColor: "#334155",
-      },
-      grid: {
-        vertLines: { color: "#f1f5f9" },
-        horzLines: { color: "#f1f5f9" },
-      },
+      layout: { background: { color: "#ffffff" }, textColor: "#334155" },
+      grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor: "#cbd5e1" },
-      timeScale: { borderColor: "#cbd5e1", timeVisible: true },
+      timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute), secondsVisible: false },
     });
     t1TvChartInst = chart;
 
-    const isUs = stockData.market_country === "US" || stockData.currency === "USD";
-    const currency = isUs ? "USD" : "KRW";
-
-    // 한국 주식 관례: 양봉 빨강, 음봉 파랑
     const candleSeries = chart.addCandlestickSeries({
       upColor: "#ef4444",
       downColor: "#3b82f6",
@@ -624,37 +679,29 @@ document.addEventListener("DOMContentLoaded", () => {
         ? { type: "price", precision: 2, minMove: 0.01 }
         : { type: "price", precision: 0, minMove: 1 },
     });
-    candleSeries.setData(
-      ohlcv.map((d) => ({
-        time: d.time,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-      }))
-    );
+    candleSeries.setData(ohlcv.map((d) => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
 
-    // 20일 이동평균선 & 60일 이동평균선 오버레이
-    const dates = s.dates || [];
-    const buildLine = (arr) =>
-      dates
-        .map((t, i) => (arr && arr[i] !== null && arr[i] !== undefined ? { time: t, value: arr[i] } : null))
-        .filter(Boolean);
-
-    const ma20Series = chart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "MA20" });
-    ma20Series.setData(buildLine(s.ma20));
-
-    const ma60Series = chart.addLineSeries({ color: "#10b981", lineWidth: 1.5, title: "MA60" });
-    ma60Series.setData(buildLine(s.ma60));
+    // 체크박스 상태에 따라 오버레이 지표 추가
+    if (indMa5.checked && chartData.ma5?.length) {
+      chart.addLineSeries({ color: "#ec4899", lineWidth: 1.5, title: "MA5" }).setData(chartData.ma5);
+    }
+    if (indMa20.checked && chartData.ma20?.length) {
+      chart.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, title: "MA20" }).setData(chartData.ma20);
+    }
+    if (indMa60.checked && chartData.ma60?.length) {
+      chart.addLineSeries({ color: "#10b981", lineWidth: 1.5, title: "MA60" }).setData(chartData.ma60);
+    }
+    if (indBb.checked && chartData.bb_upper?.length && chartData.bb_lower?.length) {
+      chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB상단" }).setData(chartData.bb_upper);
+      chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB하단" }).setData(chartData.bb_lower);
+    }
 
     // 하단 거래량 히스토그램
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     volumeSeries.setData(
       ohlcv.map((d) => ({
         time: d.time,
@@ -663,12 +710,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }))
     );
 
-    // 크로스헤어 이동 시 OHLCV 범례 업데이트
+    // 범례 맵 (시간 -> 라벨)
+    const labelMap = new Map(ohlcv.map((d) => [d.time, d.label || d.time]));
     const last = ohlcv[ohlcv.length - 1];
     const updateLegend = (bar, vol) => {
       if (!bar) return;
+      const dateLabel = labelMap.get(bar.time) || bar.time;
       t1TvOhlcvLegend.textContent =
-        `${bar.time} | 시 ${formatPriceByCurrency(bar.open, currency)} · 고 ${formatPriceByCurrency(bar.high, currency)} · ` +
+        `${dateLabel} | 시 ${formatPriceByCurrency(bar.open, currency)} · 고 ${formatPriceByCurrency(bar.high, currency)} · ` +
         `저 ${formatPriceByCurrency(bar.low, currency)} · 종 ${formatPriceByCurrency(bar.close, currency)} | 거래량 ${formatNumber(vol)}`;
     };
     updateLegend(last, last.volume);
@@ -684,9 +733,86 @@ document.addEventListener("DOMContentLoaded", () => {
         updateLegend({ ...cData, time: param.time }, vData ? vData.value : 0);
       }
     });
-
     chart.timeScale().fitContent();
+
+    // 보조 지표 1: RSI(14)
+    if (indRsi.checked && chartData.rsi14?.length) {
+      t1TvRsiWrap.classList.remove("hidden");
+      t1TvRsiInst = LightweightCharts.createChart(t1TvRsiContainer, {
+        width: chartWidth,
+        height: 130,
+        layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+        grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+        timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute) },
+      });
+      t1TvRsiInst.addLineSeries({ color: "#8b5cf6", lineWidth: 2, title: "RSI14" }).setData(chartData.rsi14);
+      t1TvRsiInst.timeScale().fitContent();
+    } else {
+      t1TvRsiWrap.classList.add("hidden");
+    }
+
+    // 보조 지표 2: MACD
+    if (indMacd.checked && chartData.macd?.length) {
+      t1TvMacdWrap.classList.remove("hidden");
+      t1TvMacdInst = LightweightCharts.createChart(t1TvMacdContainer, {
+        width: chartWidth,
+        height: 130,
+        layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+        grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+        timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute) },
+      });
+      t1TvMacdInst.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "MACD" }).setData(chartData.macd);
+      if (chartData.macd_signal?.length) {
+        t1TvMacdInst.addLineSeries({ color: "#ef4444", lineWidth: 1.5, title: "Signal" }).setData(chartData.macd_signal);
+      }
+      if (chartData.macd_hist?.length) {
+        t1TvMacdInst.addHistogramSeries({ title: "Hist" }).setData(
+          chartData.macd_hist.map((d) => ({
+            time: d.time,
+            value: d.value,
+            color: d.value >= 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(59, 130, 246, 0.45)",
+          }))
+        );
+      }
+      t1TvMacdInst.timeScale().fitContent();
+    } else {
+      t1TvMacdWrap.classList.add("hidden");
+    }
   }
+
+  // 타임프레임 버튼 클릭 (1분/5분/10분/30분/60분/일봉/주봉/월봉)
+  tvTfBtns.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!t1CurrentStockMeta?.code) return;
+      const tf = btn.dataset.tf;
+      tvTfBtns.forEach((b) => b.classList.toggle("active", b === btn));
+      t1TvNotice.classList.add("hidden");
+
+      try {
+        const res = await fetch("/api/chart/naver", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: t1CurrentStockMeta.code, timeframe: tf }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "차트 조회 실패");
+        t1CurrentChartData = data;
+        drawTvChartFromData(data);
+      } catch (err) {
+        t1TvNotice.textContent = `안내: ${err.message}`;
+        t1TvNotice.classList.remove("hidden");
+      }
+    });
+  });
+
+  // 지표 토글 체크박스 (MA5, MA20, MA60, 볼린저밴드, RSI, MACD)
+  [indMa5, indMa20, indMa60, indBb, indRsi, indMacd].forEach((chk) => {
+    chk.addEventListener("change", () => {
+      if (t1CurrentChartData) {
+        drawTvChartFromData(t1CurrentChartData);
+      }
+    });
+  });
 
   function renderTab1Disclosures(stockData) {
     const list = stockData.disclosures || [];

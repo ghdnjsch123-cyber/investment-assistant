@@ -55,6 +55,158 @@ def fetch_naver_chart_history(code: str, is_foreign: bool = False, days: int = 3
     return df.dropna(subset=["Close"])
 
 
+SUPPORTED_TIMEFRAMES = {
+    "minute1": ("minute1", True),
+    "minute5": ("minute5", True),
+    "minute10": ("minute10", True),
+    "minute30": ("minute30", True),
+    "minute60": ("minute60", True),
+    "day": ("day", False),
+    "week": ("week", False),
+    "month": ("month", False),
+}
+
+
+def fetch_naver_chart_with_indicators(
+    code: str,
+    timeframe: str = "day",
+    is_foreign: bool = None,
+) -> dict:
+    """네이버 증권 차트 API에서 분봉(1/5/10/30/60분)·일·주·월봉 OHLCV와 MA/볼린저/RSI/MACD를 계산합니다."""
+    cleaned_code = str(code).strip()
+    if is_foreign is None:
+        is_foreign = not (cleaned_code.isdigit() and len(cleaned_code) == 6)
+
+    tf_key = timeframe if timeframe in SUPPORTED_TIMEFRAMES else "day"
+    naver_tf, is_minute = SUPPORTED_TIMEFRAMES[tf_key]
+    market_seg = "foreign" if is_foreign else "domestic"
+    url = f"https://api.stock.naver.com/chart/{market_seg}/item/{cleaned_code}/{naver_tf}"
+
+    params = {}
+    if not is_minute:
+        days_back = 365 if tf_key == "day" else (365 * 3 if tf_key == "week" else 365 * 8)
+        end_dt = datetime.today() + timedelta(days=1)
+        start_dt = end_dt - timedelta(days=days_back)
+        params = {
+            "startDateTime": start_dt.strftime("%Y%m%d0000"),
+            "endDateTime": end_dt.strftime("%Y%m%d0000"),
+        }
+
+    logger.info("[NAVER-CHART] 타임프레임 조회 (code=%s, tf=%s, foreign=%s)", cleaned_code, tf_key, is_foreign)
+    resp = requests.get(url, params=params, headers=NAVER_CHART_HEADERS, timeout=10)
+    if resp.status_code != 200:
+        raise RuntimeError(f"네이버 차트 API 호출 실패 (HTTP {resp.status_code})")
+
+    rows = resp.json()
+    if not isinstance(rows, list) or len(rows) == 0:
+        raise ValueError(f"'{cleaned_code}'의 {tf_key} 차트 데이터가 현재 제공되지 않습니다.")
+
+    df = pd.DataFrame(rows)
+    if is_minute:
+        # localDateTime: YYYYMMDDHHMMSS -> KST를 차트에 그대로 표시하기 위해 UTC 기준 timestamp로 변환
+        dt_series = pd.to_datetime(df["localDateTime"], format="%Y%m%d%H%M%S")
+        df["Date"] = dt_series
+        df = df.rename(columns={
+            "openPrice": "Open",
+            "highPrice": "High",
+            "lowPrice": "Low",
+            "currentPrice": "Close",
+            "accumulatedTradingVolume": "Volume",
+        })
+    else:
+        df["Date"] = pd.to_datetime(df["localDate"], format="%Y%m%d")
+        df = df.rename(columns={
+            "openPrice": "Open",
+            "highPrice": "High",
+            "lowPrice": "Low",
+            "closePrice": "Close",
+            "accumulatedTradingVolume": "Volume",
+        })
+
+    df = df.set_index("Date").sort_index()
+    # 중복 시간 제거
+    df = df[~df.index.duplicated(keep="last")]
+    for col in ("Open", "High", "Low", "Close", "Volume"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["Close"])
+
+    close = df["Close"].astype(float)
+    df["MA5"] = close.rolling(window=5).mean()
+    df["MA20"] = close.rolling(window=20).mean()
+    df["MA60"] = close.rolling(window=60).mean()
+
+    std20 = close.rolling(window=20).std()
+    df["BB_UPPER"] = df["MA20"] + (std20 * 2.0)
+    df["BB_LOWER"] = df["MA20"] - (std20 * 2.0)
+
+    delta = close.diff()
+    gain = delta.clip(lower=0.0)
+    loss = -delta.clip(upper=0.0)
+    avg_gain = gain.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    df["RSI14"] = 100.0 - (100.0 / (1.0 + rs))
+    df.loc[avg_loss == 0, "RSI14"] = 100.0
+
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    df["MACD"] = ema12 - ema26
+    df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    df["MACD_HIST"] = df["MACD"] - df["MACD_SIGNAL"]
+
+    view = df.tail(180).copy()
+    price_dec = 2 if is_foreign else 0
+
+    def _tv_time(ts):
+        if is_minute:
+            # LightweightCharts는 epoch seconds를 UTC로 표시하므로 KST 시각 그대로 보이도록 정수 변환
+            return int(ts.timestamp()) + (9 * 3600)
+        return ts.strftime("%Y-%m-%d")
+
+    times = [_tv_time(idx) for idx in view.index]
+    ohlcv = []
+    for idx, (_, row) in enumerate(view.iterrows()):
+        c = float(row["Close"])
+        o = float(row["Open"]) if pd.notna(row["Open"]) and float(row["Open"]) > 0 else c
+        h = float(row["High"]) if pd.notna(row["High"]) and float(row["High"]) > 0 else max(o, c)
+        l = float(row["Low"]) if pd.notna(row["Low"]) and float(row["Low"]) > 0 else min(o, c)
+        v = float(row["Volume"]) if "Volume" in view.columns and pd.notna(row["Volume"]) else 0.0
+        ohlcv.append({
+            "time": times[idx],
+            "label": view.index[idx].strftime("%Y-%m-%d %H:%M" if is_minute else "%Y-%m-%d"),
+            "open": round(o, price_dec),
+            "high": round(h, price_dec),
+            "low": round(l, price_dec),
+            "close": round(c, price_dec),
+            "volume": round(v, 0),
+        })
+
+    def _tv_line(col: str, dec: int):
+        out = []
+        for i, v in enumerate(view[col]):
+            if pd.notna(v):
+                out.append({"time": times[i], "value": round(float(v), dec)})
+        return out
+
+    return {
+        "code": cleaned_code,
+        "timeframe": tf_key,
+        "is_minute": is_minute,
+        "is_foreign": is_foreign,
+        "ohlcv": ohlcv,
+        "ma5": _tv_line("MA5", price_dec),
+        "ma20": _tv_line("MA20", price_dec),
+        "ma60": _tv_line("MA60", price_dec),
+        "bb_upper": _tv_line("BB_UPPER", price_dec),
+        "bb_lower": _tv_line("BB_LOWER", price_dec),
+        "rsi14": _tv_line("RSI14", 2),
+        "macd": _tv_line("MACD", 2),
+        "macd_signal": _tv_line("MACD_SIGNAL", 2),
+        "macd_hist": _tv_line("MACD_HIST", 2),
+    }
+
+
 def fetch_price_history(code: str, days: int = 365) -> pd.DataFrame:
     """FinanceDataReader를 사용해 지정한 기간(기본 1년)의 일봉 주가 데이터를 조회합니다."""
     cleaned_code = str(code).strip()
