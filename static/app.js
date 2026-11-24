@@ -2593,4 +2593,182 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!e.target.closest(".t4-ind-search-wrap")) t4IndSearchList.classList.add("hidden");
     if (!e.target.closest("#t4SelectForm .autocomplete-wrap")) t4AutocompleteList.classList.add("hidden");
   });
+
+  // -------------------------------------------------------------------------
+  // 탭 4: 트레이딩뷰 스타일 크립토 히트맵 (Squarified Treemap)
+  // -------------------------------------------------------------------------
+  const t4HeatmapCanvas = document.getElementById("t4HeatmapCanvas");
+  const t4HeatmapTooltip = document.getElementById("t4HeatmapTooltip");
+  const t4HeatmapRefreshBtn = document.getElementById("t4HeatmapRefreshBtn");
+  let t4HeatmapItems = [];
+  let t4HeatmapLoaded = false;
+
+  function getHeatmapColor(chg) {
+    if (chg >= 5) return "#047857";
+    if (chg >= 2) return "#059669";
+    if (chg > 0.15) return "#10b981";
+    if (chg >= -0.15) return "#64748b";
+    if (chg > -2) return "#ef4444";
+    if (chg > -5) return "#dc2626";
+    return "#991b1b";
+  }
+
+  function computeSquarifiedTreemap(items, width, height) {
+    const totalVal = items.reduce((s, d) => s + d.market_cap, 0);
+    if (!totalVal || width <= 0 || height <= 0) return [];
+
+    const totalArea = width * height;
+    const nodes = items
+      .map((d) => ({ ...d, area: (d.market_cap / totalVal) * totalArea }))
+      .sort((a, b) => b.area - a.area);
+
+    const rects = [];
+
+    function worstAspect(row, side) {
+      if (!row.length || side <= 0) return Infinity;
+      const sum = row.reduce((s, n) => s + n.area, 0);
+      const maxA = Math.max(...row.map((n) => n.area));
+      const minA = Math.min(...row.map((n) => n.area));
+      const s2 = side * side;
+      return Math.max((s2 * maxA) / (sum * sum), (sum * sum) / (s2 * minA));
+    }
+
+    function layoutRow(row, box) {
+      const sum = row.reduce((s, n) => s + n.area, 0);
+      if (box.w >= box.h) {
+        const colW = box.h > 0 ? sum / box.h : 0;
+        let cy = box.y;
+        row.forEach((n) => {
+          const h = colW > 0 ? n.area / colW : 0;
+          rects.push({ ...n, x: box.x, y: cy, w: colW, h });
+          cy += h;
+        });
+        return { x: box.x + colW, y: box.y, w: Math.max(0, box.w - colW), h: box.h };
+      } else {
+        const rowH = box.w > 0 ? sum / box.w : 0;
+        let cx = box.x;
+        row.forEach((n) => {
+          const w = rowH > 0 ? n.area / rowH : 0;
+          rects.push({ ...n, x: cx, y: box.y, w, h: rowH });
+          cx += w;
+        });
+        return { x: box.x, y: box.y + rowH, w: box.w, h: Math.max(0, box.h - rowH) };
+      }
+    }
+
+    let box = { x: 0, y: 0, w: width, h: height };
+    let row = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const cand = nodes[i];
+      const side = Math.min(box.w, box.h);
+      if (row.length === 0 || worstAspect([...row, cand], side) <= worstAspect(row, side)) {
+        row.push(cand);
+      } else {
+        box = layoutRow(row, box);
+        row = [cand];
+      }
+    }
+    if (row.length > 0) layoutRow(row, box);
+    return rects;
+  }
+
+  function renderT4Heatmap() {
+    if (!t4HeatmapCanvas || !t4HeatmapItems.length) return;
+    const width = t4HeatmapCanvas.clientWidth || 800;
+    const height = t4HeatmapCanvas.clientHeight || 410;
+    const tiles = computeSquarifiedTreemap(t4HeatmapItems, width, height);
+
+    t4HeatmapCanvas.innerHTML = "";
+    tiles.forEach((t) => {
+      const div = document.createElement("div");
+      div.className = "t4-hm-tile";
+      div.style.left = `${t.x}px`;
+      div.style.top = `${t.y}px`;
+      div.style.width = `${t.w}px`;
+      div.style.height = `${t.h}px`;
+      div.style.background = getHeatmapColor(t.change_24h);
+
+      const minDim = Math.min(t.w, t.h);
+      const symSize = Math.max(9, Math.min(24, Math.floor(minDim * 0.24)));
+      const chgSize = Math.max(8, Math.min(16, Math.floor(minDim * 0.16)));
+      const sign = t.change_24h > 0 ? "+" : "";
+
+      if (minDim >= 26) {
+        let html = `<span class="t4-hm-sym" style="font-size:${symSize}px">${t.symbol}</span>`;
+        if (minDim >= 38) {
+          html += `<span class="t4-hm-chg" style="font-size:${chgSize}px">${sign}${t.change_24h}%</span>`;
+        }
+        if (minDim >= 72 && t.w >= 88) {
+          const dec = t.price >= 1 ? 2 : 4;
+          html += `<span class="t4-hm-price" style="font-size:${Math.max(10, chgSize - 2)}px">${formatUsdPrice(t.price, dec)}</span>`;
+        }
+        div.innerHTML = html;
+      }
+
+      div.addEventListener("mouseenter", () => {
+        if (!t4HeatmapTooltip) return;
+        const dec = t.price >= 1 ? 2 : 4;
+        t4HeatmapTooltip.innerHTML = `
+          <strong>${t.name} (${t.symbol})</strong><br/>
+          현재가: ${formatUsdPrice(t.price, dec)} · 24h: <strong>${sign}${t.change_24h}%</strong><br/>
+          시가총액: ${formatUsdCompact(t.market_cap)} · 24h 거래량: ${formatUsdCompact(t.volume_24h)}
+        `;
+        t4HeatmapTooltip.classList.remove("hidden");
+      });
+
+      div.addEventListener("mousemove", (e) => {
+        if (!t4HeatmapTooltip) return;
+        const wrapRect = t4HeatmapCanvas.getBoundingClientRect();
+        let left = e.clientX - wrapRect.left + 12;
+        let top = e.clientY - wrapRect.top + 12;
+        if (left + 220 > wrapRect.width) left = Math.max(8, left - 235);
+        if (top + 76 > wrapRect.height) top = Math.max(8, top - 86);
+        t4HeatmapTooltip.style.left = `${left}px`;
+        t4HeatmapTooltip.style.top = `${top}px`;
+      });
+
+      div.addEventListener("mouseleave", () => {
+        t4HeatmapTooltip?.classList.add("hidden");
+      });
+
+      div.addEventListener("click", () => {
+        t4MarketInput.value = t.usdt_symbol;
+        sendTab4Request(t.usdt_symbol, "", true);
+      });
+
+      t4HeatmapCanvas.appendChild(div);
+    });
+  }
+
+  async function loadAndRenderT4Heatmap(force = false) {
+    if (!t4HeatmapCanvas) return;
+    if (t4HeatmapLoaded && !force && t4HeatmapItems.length) {
+      renderT4Heatmap();
+      return;
+    }
+    t4HeatmapCanvas.innerHTML = `<div class="t4-heatmap-loading">실시간 크립토 히트맵 불러오는 중...</div>`;
+    try {
+      const res = await fetch("/api/coin/heatmap?limit=30");
+      const data = await res.json();
+      t4HeatmapItems = data.items || [];
+      t4HeatmapLoaded = true;
+      if (!t4HeatmapItems.length) {
+        t4HeatmapCanvas.innerHTML = `<div class="t4-heatmap-loading">히트맵 데이터를 불러오지 못했습니다.</div>`;
+        return;
+      }
+      renderT4Heatmap();
+    } catch {
+      t4HeatmapCanvas.innerHTML = `<div class="t4-heatmap-loading">히트맵 로드 중 오류가 발생했습니다.</div>`;
+    }
+  }
+
+  t4HeatmapRefreshBtn?.addEventListener("click", () => loadAndRenderT4Heatmap(true));
+  document.querySelector('.tab-btn[data-tab="tab4"]')?.addEventListener("click", () => {
+    setTimeout(() => loadAndRenderT4Heatmap(false), 60);
+  });
+  window.addEventListener("resize", () => {
+    if (document.getElementById("tab4")?.classList.contains("active") && t4HeatmapItems.length) {
+      renderT4Heatmap();
+    }
+  });
 });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=18" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=19" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -366,6 +366,32 @@
         <div id="t4ErrorBox" class="status-box error hidden"></div>
       </div>
 
+      <!-- 4-1B. 트레이딩뷰 스타일 크립토 히트맵 -->
+      <div id="t4HeatmapCard" class="card t4-heatmap-card">
+        <div class="t4-heatmap-head">
+          <div>
+            <h3 class="section-title">🗺️ 실시간 크립토 히트맵 (시가총액 크기 · 24h 등락률)</h3>
+            <p class="panel-desc">블록 크기는 시가총액, 색상은 24시간 등락률을 나타냅니다. 코인을 클릭하면 바로 USDT 종합 분석을 시작합니다.</p>
+          </div>
+          <div class="t4-heatmap-controls">
+            <div class="t4-hm-legend">
+              <span class="hm-leg-chip" style="background:#991b1b;">-5%↓</span>
+              <span class="hm-leg-chip" style="background:#ef4444;">-2%</span>
+              <span class="hm-leg-chip" style="background:#64748b;">0%</span>
+              <span class="hm-leg-chip" style="background:#10b981;">+2%</span>
+              <span class="hm-leg-chip" style="background:#047857;">+5%↑</span>
+            </div>
+            <button type="button" id="t4HeatmapRefreshBtn" class="secondary-btn">새로고침</button>
+          </div>
+        </div>
+        <div id="t4HeatmapWrap" class="t4-heatmap-wrap">
+          <div id="t4HeatmapCanvas" class="t4-heatmap-canvas">
+            <div class="t4-heatmap-loading">크립토 히트맵 로딩 중...</div>
+          </div>
+          <div id="t4HeatmapTooltip" class="t4-heatmap-tooltip hidden"></div>
+        </div>
+      </div>
+
       <!-- 4-2. 코인 종합 분석 리포트 패널 -->
       <div id="t4ReportSection" class="card hidden">
         <div class="section-header-row">
@@ -548,6 +574,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=18"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=19"></script>
 </body>
 </html>

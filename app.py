@@ -11,7 +11,13 @@ from quant_engine import (
     fetch_naver_chart_with_indicators,
 )
 from dart_client import fetch_recent_disclosures, search_stock_catalog, resolve_stock_code
-from coin_client import search_coins, resolve_coin_market, fetch_coin_chart_with_indicators, collect_coin_data
+from coin_client import (
+    search_coins,
+    resolve_coin_market,
+    fetch_coin_chart_with_indicators,
+    collect_coin_data,
+    fetch_crypto_heatmap,
+)
 
 # .env 환경변수 로드
 load_dotenv()
@@ -418,6 +424,18 @@ def technical_chat():
     except Exception as e:
         logger.error("[ERROR] /api/technical/chat 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/coin/heatmap", methods=["GET"])
+def coin_heatmap():
+    """[탭4] 트레이딩뷰 스타일 크립토 히트맵 데이터(시가총액 크기 + 24h 등락률 색상)를 반환합니다."""
+    try:
+        limit = min(50, max(10, int(request.args.get("limit", 30))))
+        items = fetch_crypto_heatmap(limit=limit, include_stables=False)
+        return jsonify({"items": items}), 200
+    except Exception as e:
+        logger.error("[ERROR] /api/coin/heatmap 실패: %s", e)
+        return jsonify({"items": [], "error": str(e)}), 200
 
 
 @app.route("/api/coin/search", methods=["GET"])

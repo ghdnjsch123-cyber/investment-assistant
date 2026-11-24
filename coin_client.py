@@ -433,6 +433,68 @@ def fetch_btc_dominance() -> dict[str, Any]:
         return _GLOBAL_CACHE["data"] or {"available": False}
 
 
+_HEATMAP_CACHE: dict[str, Any] = {"ts": 0.0, "items": []}
+_STABLE_SYMBOLS = {"USDT", "USDC", "USDS", "DAI", "FDUSD", "TUSD", "BUSD", "PYUSD", "USDE", "USD1"}
+
+
+def fetch_crypto_heatmap(limit: int = 30, include_stables: bool = False) -> list[dict[str, Any]]:
+    """트레이딩뷰 스타일 크립토 히트맵용 시가총액·24h 등락률 데이터 (3분 캐시)."""
+    now = time.time()
+    cache_key = f"{limit}_{include_stables}"
+    if _HEATMAP_CACHE["items"] and _HEATMAP_CACHE.get("key") == cache_key and (now - _HEATMAP_CACHE["ts"] < 180):
+        return _HEATMAP_CACHE["items"]
+
+    try:
+        resp = requests.get(
+            "https://api.coingecko.com/api/v3/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": min(60, limit + 15),
+                "page": 1,
+                "sparkline": "false",
+                "price_change_percentage": "24h",
+            },
+            headers=_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        raw = resp.json() or []
+        items: list[dict[str, Any]] = []
+        for row in raw:
+            sym = str(row.get("symbol") or "").upper()
+            if not sym:
+                continue
+            if not include_stables and sym in _STABLE_SYMBOLS:
+                continue
+            mcap = float(row.get("market_cap") or 0)
+            if mcap <= 0:
+                continue
+            price = float(row.get("current_price") or 0)
+            chg_24h = round(float(row.get("price_change_percentage_24h") or 0), 2)
+            vol_24h = float(row.get("total_volume") or 0)
+            items.append(
+                {
+                    "symbol": sym,
+                    "usdt_symbol": f"{sym}USDT",
+                    "name": str(row.get("name") or sym),
+                    "price": price,
+                    "market_cap": mcap,
+                    "change_24h": chg_24h,
+                    "volume_24h": vol_24h,
+                }
+            )
+            if len(items) >= limit:
+                break
+
+        _HEATMAP_CACHE["ts"] = now
+        _HEATMAP_CACHE["key"] = cache_key
+        _HEATMAP_CACHE["items"] = items
+        return items
+    except Exception:
+        return _HEATMAP_CACHE["items"] or []
+
+
 def fetch_fear_and_greed() -> dict[str, Any]:
     """Alternative.me 가상자산 공포·탐욕 지수 조회 (오늘/어제/지난주/지난달 포함)."""
     cls_map = {
