@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=13" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=14" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -93,7 +93,7 @@
               <input
                 type="text"
                 id="tvIndSearchInput"
-                placeholder="+ 지표 검색/추가 (스토캐스틱, 일목, CCI, ATR, OBV...)"
+                placeholder="+ 지표 검색/추가 (30종+: ADX, 일목, PSAR, 켈트너, MA 100...)"
                 autocomplete="off"
               />
               <ul id="tvIndSearchList" class="autocomplete-list tv-ind-dropdown hidden"></ul>
@@ -333,6 +333,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=13"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=14"></script>
 </body>
 </html>

@@ -6,3 +6,4 @@ google-genai>=0.1.0
 finance-datareader>=0.9.90
 numpy>=1.26.0
 pandas>=2.2.0
+ta>=0.11.0

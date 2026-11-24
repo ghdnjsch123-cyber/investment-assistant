@@ -4,6 +4,7 @@ import requests
 import numpy as np
 import pandas as pd
 import FinanceDataReader as fdr
+import ta
 
 logger = logging.getLogger("StockAssistant")
 
@@ -209,6 +210,90 @@ def fetch_naver_chart_with_indicators(
     mfr = pos_mf / neg_mf
     df["MFI14"] = 100.0 - (100.0 / (1.0 + mfr))
 
+    # 13. ta 라이브러리 기반 확장 지표 (오버레이 & 보조차트)
+    df["EMA5"] = close.ewm(span=5, adjust=False).mean()
+    df["EMA60"] = close.ewm(span=60, adjust=False).mean()
+    df["EMA120"] = close.ewm(span=120, adjust=False).mean()
+
+    try:
+        kc = ta.volatility.KeltnerChannel(high=high, low=low, close=close, window=20)
+        df["KC_HIGH"] = kc.keltner_channel_hband()
+        df["KC_LOW"] = kc.keltner_channel_lband()
+    except Exception:
+        pass
+
+    try:
+        dc = ta.volatility.DonchianChannel(high=high, low=low, close=close, window=20)
+        df["DC_HIGH"] = dc.donchian_channel_hband()
+        df["DC_LOW"] = dc.donchian_channel_lband()
+    except Exception:
+        pass
+
+    try:
+        psar_ind = ta.trend.PSARIndicator(high=high, low=low, close=close)
+        df["PSAR"] = psar_ind.psar()
+    except Exception:
+        pass
+
+    try:
+        adx_ind = ta.trend.ADXIndicator(high=high, low=low, close=close, window=14)
+        df["ADX"] = adx_ind.adx()
+        df["ADX_POS"] = adx_ind.adx_pos()
+        df["ADX_NEG"] = adx_ind.adx_neg()
+    except Exception:
+        pass
+
+    try:
+        aroon_ind = ta.trend.AroonIndicator(high=high, low=low, window=25)
+        df["AROON_UP"] = aroon_ind.aroon_up()
+        df["AROON_DOWN"] = aroon_ind.aroon_down()
+    except Exception:
+        pass
+
+    try:
+        df["AO"] = ta.momentum.AwesomeOscillatorIndicator(high=high, low=low).awesome_oscillator()
+    except Exception:
+        pass
+
+    try:
+        df["ROC"] = ta.momentum.ROCIndicator(close=close, window=12).roc()
+    except Exception:
+        pass
+
+    try:
+        df["TSI"] = ta.momentum.TSIIndicator(close=close).tsi()
+    except Exception:
+        pass
+
+    try:
+        df["UO"] = ta.momentum.UltimateOscillator(high=high, low=low, close=close).ultimate_oscillator()
+    except Exception:
+        pass
+
+    try:
+        df["CMF"] = ta.volume.ChaikinMoneyFlowIndicator(high=high, low=low, close=close, volume=vol, window=20).chaikin_money_flow()
+    except Exception:
+        pass
+
+    try:
+        vortex = ta.trend.VortexIndicator(high=high, low=low, close=close, window=14)
+        df["VI_POS"] = vortex.vortex_indicator_pos()
+        df["VI_NEG"] = vortex.vortex_indicator_neg()
+    except Exception:
+        pass
+
+    try:
+        kst_ind = ta.trend.KSTIndicator(close=close)
+        df["KST"] = kst_ind.kst()
+        df["KST_SIG"] = kst_ind.kst_sig()
+    except Exception:
+        pass
+
+    try:
+        df["FI"] = ta.volume.ForceIndexIndicator(close=close, volume=vol, window=13).force_index()
+    except Exception:
+        pass
+
     view = df.tail(180).copy()
     price_dec = 2 if is_foreign else 0
 
@@ -237,9 +322,11 @@ def fetch_naver_chart_with_indicators(
         })
 
     def _tv_line(col: str, dec: int):
+        if col not in view.columns:
+            return []
         out = []
         for i, v in enumerate(view[col]):
-            if pd.notna(v):
+            if pd.notna(v) and np.isfinite(float(v)):
                 out.append({"time": times[i], "value": round(float(v), dec)})
         return out
 
@@ -253,9 +340,17 @@ def fetch_naver_chart_with_indicators(
         "ma20": _tv_line("MA20", price_dec),
         "ma60": _tv_line("MA60", price_dec),
         "ma120": _tv_line("MA120", price_dec),
+        "ema5": _tv_line("EMA5", price_dec),
         "ema20": _tv_line("EMA20", price_dec),
+        "ema60": _tv_line("EMA60", price_dec),
+        "ema120": _tv_line("EMA120", price_dec),
         "bb_upper": _tv_line("BB_UPPER", price_dec),
         "bb_lower": _tv_line("BB_LOWER", price_dec),
+        "kc_high": _tv_line("KC_HIGH", price_dec),
+        "kc_low": _tv_line("KC_LOW", price_dec),
+        "dc_high": _tv_line("DC_HIGH", price_dec),
+        "dc_low": _tv_line("DC_LOW", price_dec),
+        "psar": _tv_line("PSAR", price_dec),
         "ichi_conv": _tv_line("ICHI_CONV", price_dec),
         "ichi_base": _tv_line("ICHI_BASE", price_dec),
         "vwap20": _tv_line("VWAP20", price_dec),
@@ -270,6 +365,21 @@ def fetch_naver_chart_with_indicators(
         "obv": _tv_line("OBV", 0),
         "willr14": _tv_line("WILLR14", 2),
         "mfi14": _tv_line("MFI14", 2),
+        "adx": _tv_line("ADX", 2),
+        "adx_pos": _tv_line("ADX_POS", 2),
+        "adx_neg": _tv_line("ADX_NEG", 2),
+        "aroon_up": _tv_line("AROON_UP", 2),
+        "aroon_down": _tv_line("AROON_DOWN", 2),
+        "ao": _tv_line("AO", 2),
+        "roc": _tv_line("ROC", 2),
+        "tsi": _tv_line("TSI", 2),
+        "uo": _tv_line("UO", 2),
+        "cmf": _tv_line("CMF", 4),
+        "vi_pos": _tv_line("VI_POS", 3),
+        "vi_neg": _tv_line("VI_NEG", 3),
+        "kst": _tv_line("KST", 2),
+        "kst_sig": _tv_line("KST_SIG", 2),
+        "fi": _tv_line("FI", 0),
     }
 
 

@@ -349,23 +349,77 @@ document.addEventListener("DOMContentLoaded", () => {
   const activeTvIndicators = new Set(["ma20", "ma60"]);
 
   const TV_INDICATOR_CATALOG = [
+    // 메인 차트 오버레이 (14종)
     { id: "ma5", name: "MA5 (5일 이동평균)", keywords: "ma5 5일 이동평균 이평선", mode: "overlay" },
     { id: "ma20", name: "MA20 (20일 이동평균)", keywords: "ma20 20일 이동평균 이평선", mode: "overlay" },
     { id: "ma60", name: "MA60 (60일 이동평균)", keywords: "ma60 60일 이동평균 이평선", mode: "overlay" },
     { id: "ma120", name: "MA120 (120일 이동평균)", keywords: "ma120 120일 이동평균 장기이평선", mode: "overlay" },
+    { id: "ema5", name: "EMA5 (5일 지수이동평균)", keywords: "ema5 지수이동평균", mode: "overlay" },
     { id: "ema20", name: "EMA20 (20일 지수이동평균)", keywords: "ema20 지수이동평균 exponential", mode: "overlay" },
+    { id: "ema60", name: "EMA60 (60일 지수이동평균)", keywords: "ema60 지수이동평균", mode: "overlay" },
+    { id: "ema120", name: "EMA120 (120일 지수이동평균)", keywords: "ema120 지수이동평균", mode: "overlay" },
     { id: "bb", name: "볼린저밴드 (20, 2)", keywords: "볼린저밴드 bollinger bb 밴드", mode: "overlay" },
+    { id: "keltner", name: "켈트너 채널 (Keltner 20)", keywords: "켈트너 keltner 채널 밴드", mode: "overlay" },
+    { id: "donchian", name: "돈치안 채널 (Donchian 20)", keywords: "돈치안 donchian 채널 터틀", mode: "overlay" },
     { id: "ichimoku", name: "일목균형표 (전환선/기준선)", keywords: "일목균형표 ichimoku 전환선 기준선", mode: "overlay" },
+    { id: "psar", name: "Parabolic SAR (추세전환)", keywords: "psar parabolic sar 파라볼릭 추세", mode: "overlay" },
     { id: "vwap20", name: "VWAP (20일 거래량가중평균)", keywords: "vwap 거래량가중평균", mode: "overlay" },
+    // 하단 보조 차트 (16종)
     { id: "rsi14", name: "RSI (14일 상대강도지수)", keywords: "rsi 14 상대강도 과매수 과매도", mode: "sub" },
     { id: "macd", name: "MACD (12, 26, 9)", keywords: "macd 오실레이터 시그널", mode: "sub" },
     { id: "stoch", name: "스토캐스틱 (%K / %D)", keywords: "스토캐스틱 stochastic slow k d", mode: "sub" },
+    { id: "adx", name: "ADX (14일 추세강도 DI+/DI-)", keywords: "adx di+ di- 추세강도 dmi", mode: "sub" },
+    { id: "aroon", name: "Aroon (25일 아룬 추세)", keywords: "aroon 아룬 추세", mode: "sub" },
+    { id: "ao", name: "Awesome Oscillator (AO)", keywords: "ao awesome oscillator 모멘텀", mode: "sub" },
     { id: "cci20", name: "CCI (20일 상품채널지수)", keywords: "cci 20 상품채널", mode: "sub" },
     { id: "atr14", name: "ATR (14일 변동성 지표)", keywords: "atr 14 변동성 평균진폭", mode: "sub" },
     { id: "obv", name: "OBV (거래량 누적 지표)", keywords: "obv 거래량 누적 on balance volume", mode: "sub" },
     { id: "willr14", name: "Williams %R (14일)", keywords: "williams willr 윌리엄스", mode: "sub" },
     { id: "mfi14", name: "MFI (14일 자금흐름지수)", keywords: "mfi 14 자금흐름 money flow", mode: "sub" },
+    { id: "roc", name: "ROC (12일 가격변화율 %)", keywords: "roc 변화율 rate of change", mode: "sub" },
+    { id: "tsi", name: "TSI (진정강도지수)", keywords: "tsi true strength 진정강도", mode: "sub" },
+    { id: "uo", name: "Ultimate Oscillator (UO)", keywords: "uo ultimate oscillator 궁극", mode: "sub" },
+    { id: "cmf", name: "CMF (20일 차이킨 자금흐름)", keywords: "cmf chaikin 차이킨 자금흐름", mode: "sub" },
+    { id: "vortex", name: "Vortex (VI+ / VI- 소용돌이)", keywords: "vortex vi+ vi- 소용돌이", mode: "sub" },
+    { id: "kst", name: "KST Oscillator (추세모멘텀)", keywords: "kst know sure thing", mode: "sub" },
+    { id: "fi", name: "Force Index (13일 세력지수)", keywords: "force index fi 세력지수", mode: "sub" },
   ];
+
+  // 동적 맞춤 이평선(예: custom_ma_100, custom_ema_50) 메타 조회 헬퍼
+  function getIndicatorMeta(id) {
+    const found = TV_INDICATOR_CATALOG.find((x) => x.id === id);
+    if (found) return found;
+    const m = id.match(/^custom_(ma|ema)_(\d+)$/);
+    if (m) {
+      const kind = m[1].toUpperCase();
+      const period = Number(m[2]);
+      return { id, name: `${kind}${period} (${period}일 맞춤 이평)`, mode: "overlay", customKind: kind, period };
+    }
+    return null;
+  }
+
+  function computeCustomMaSeries(ohlcv, kind, period, dec) {
+    if (!ohlcv || ohlcv.length < period) return [];
+    const out = [];
+    if (kind === "MA") {
+      let sum = 0;
+      for (let i = 0; i < ohlcv.length; i++) {
+        sum += ohlcv[i].close;
+        if (i >= period) sum -= ohlcv[i - period].close;
+        if (i >= period - 1) {
+          out.push({ time: ohlcv[i].time, value: Number((sum / period).toFixed(dec)) });
+        }
+      }
+    } else {
+      const k = 2 / (period + 1);
+      let ema = ohlcv[0].close;
+      for (let i = 0; i < ohlcv.length; i++) {
+        ema = ohlcv[i].close * k + ema * (1 - k);
+        out.push({ time: ohlcv[i].time, value: Number(ema.toFixed(dec)) });
+      }
+    }
+    return out;
+  }
 
   function resetTab1Chat(
     notice = "위에서 종목명이나 코드를 선택해 종합 분석 리포트를 먼저 확인하신 뒤, 리포트 내용 중 궁금한 점을 아래에서 자유롭게 질문해 주세요!"
@@ -607,7 +661,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderActiveIndicatorTags() {
     tvActiveIndTags.innerHTML = "";
     activeTvIndicators.forEach((id) => {
-      const meta = TV_INDICATOR_CATALOG.find((x) => x.id === id);
+      const meta = getIndicatorMeta(id);
       if (!meta) return;
       const tag = document.createElement("span");
       tag.className = `tv-ind-tag ${meta.mode === "sub" ? "sub" : ""}`;
@@ -733,7 +787,10 @@ document.addEventListener("DOMContentLoaded", () => {
       { id: "ma20", key: "ma20", color: "#f59e0b", title: "MA20" },
       { id: "ma60", key: "ma60", color: "#10b981", title: "MA60" },
       { id: "ma120", key: "ma120", color: "#6366f1", title: "MA120" },
+      { id: "ema5", key: "ema5", color: "#f43f5e", title: "EMA5" },
       { id: "ema20", key: "ema20", color: "#06b6d4", title: "EMA20" },
+      { id: "ema60", key: "ema60", color: "#14b8a6", title: "EMA60" },
+      { id: "ema120", key: "ema120", color: "#8b5cf6", title: "EMA120" },
       { id: "vwap20", key: "vwap20", color: "#a855f7", title: "VWAP20" },
     ];
     overlayLines.forEach((cfg) => {
@@ -742,14 +799,48 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
+    // 동적 맞춤 이평선 (예: custom_ma_100, custom_ema_50)
+    const customColors = ["#e11d48", "#0284c7", "#059669", "#d97706", "#7c3aed"];
+    let customColorIdx = 0;
+    activeTvIndicators.forEach((id) => {
+      const m = getIndicatorMeta(id);
+      if (m && m.customKind) {
+        const seriesData = computeCustomMaSeries(ohlcv, m.customKind, m.period, isUs ? 2 : 0);
+        if (seriesData.length) {
+          const color = customColors[customColorIdx++ % customColors.length];
+          chart.addLineSeries({ color, lineWidth: 1.6, title: `${m.customKind}${m.period}` }).setData(seriesData);
+        }
+      }
+    });
+
     if (activeTvIndicators.has("bb") && chartData.bb_upper?.length && chartData.bb_lower?.length) {
       chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB상단" }).setData(chartData.bb_upper);
       chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB하단" }).setData(chartData.bb_lower);
     }
 
+    if (activeTvIndicators.has("keltner") && chartData.kc_high?.length && chartData.kc_low?.length) {
+      chart.addLineSeries({ color: "#0284c7", lineWidth: 1, lineStyle: 2, title: "KC상단" }).setData(chartData.kc_high);
+      chart.addLineSeries({ color: "#0284c7", lineWidth: 1, lineStyle: 2, title: "KC하단" }).setData(chartData.kc_low);
+    }
+
+    if (activeTvIndicators.has("donchian") && chartData.dc_high?.length && chartData.dc_low?.length) {
+      chart.addLineSeries({ color: "#16a34a", lineWidth: 1, lineStyle: 2, title: "DC상단" }).setData(chartData.dc_high);
+      chart.addLineSeries({ color: "#16a34a", lineWidth: 1, lineStyle: 2, title: "DC하단" }).setData(chartData.dc_low);
+    }
+
     if (activeTvIndicators.has("ichimoku") && chartData.ichi_conv?.length && chartData.ichi_base?.length) {
       chart.addLineSeries({ color: "#ef4444", lineWidth: 1.4, title: "전환선" }).setData(chartData.ichi_conv);
       chart.addLineSeries({ color: "#2563eb", lineWidth: 1.4, title: "기준선" }).setData(chartData.ichi_base);
+    }
+
+    if (activeTvIndicators.has("psar") && chartData.psar?.length) {
+      chart.addLineSeries({
+        color: "#f97316",
+        lineWidth: 0,
+        pointMarkersVisible: true,
+        pointMarkersRadius: 2.5,
+        title: "PSAR",
+      }).setData(chartData.psar);
     }
 
     // 하단 거래량 히스토그램
@@ -869,6 +960,67 @@ document.addEventListener("DOMContentLoaded", () => {
         sub.addLineSeries({ color: "#10b981", lineWidth: 1.8, title: "MFI14" }).setData(chartData.mfi14);
       });
     }
+    if (activeTvIndicators.has("adx") && chartData.adx?.length) {
+      createSubChart("ADX (14일 추세강도 · DI+/DI-)", (sub) => {
+        sub.addLineSeries({ color: "#0f172a", lineWidth: 2, title: "ADX" }).setData(chartData.adx);
+        if (chartData.adx_pos?.length) sub.addLineSeries({ color: "#16a34a", lineWidth: 1.3, title: "DI+" }).setData(chartData.adx_pos);
+        if (chartData.adx_neg?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.3, title: "DI-" }).setData(chartData.adx_neg);
+      });
+    }
+    if (activeTvIndicators.has("aroon") && chartData.aroon_up?.length) {
+      createSubChart("Aroon (25일 아룬 추세)", (sub) => {
+        sub.addLineSeries({ color: "#16a34a", lineWidth: 1.6, title: "Up" }).setData(chartData.aroon_up);
+        if (chartData.aroon_down?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.6, title: "Down" }).setData(chartData.aroon_down);
+      });
+    }
+    if (activeTvIndicators.has("ao") && chartData.ao?.length) {
+      createSubChart("Awesome Oscillator (AO)", (sub) => {
+        sub.addHistogramSeries({ title: "AO" }).setData(
+          chartData.ao.map((d) => ({
+            time: d.time,
+            value: d.value,
+            color: d.value >= 0 ? "rgba(22, 163, 74, 0.7)" : "rgba(220, 38, 38, 0.7)",
+          }))
+        );
+      });
+    }
+    if (activeTvIndicators.has("roc") && chartData.roc?.length) {
+      createSubChart("ROC (12일 가격변화율 %)", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "ROC" }).setData(chartData.roc);
+      });
+    }
+    if (activeTvIndicators.has("tsi") && chartData.tsi?.length) {
+      createSubChart("TSI (진정강도지수)", (sub) => {
+        sub.addLineSeries({ color: "#7c3aed", lineWidth: 1.8, title: "TSI" }).setData(chartData.tsi);
+      });
+    }
+    if (activeTvIndicators.has("uo") && chartData.uo?.length) {
+      createSubChart("Ultimate Oscillator (UO)", (sub) => {
+        sub.addLineSeries({ color: "#0284c7", lineWidth: 1.8, title: "UO" }).setData(chartData.uo);
+      });
+    }
+    if (activeTvIndicators.has("cmf") && chartData.cmf?.length) {
+      createSubChart("CMF (20일 차이킨 자금흐름)", (sub) => {
+        sub.addLineSeries({ color: "#059669", lineWidth: 1.8, title: "CMF" }).setData(chartData.cmf);
+      });
+    }
+    if (activeTvIndicators.has("vortex") && chartData.vi_pos?.length) {
+      createSubChart("Vortex (VI+ / VI-)", (sub) => {
+        sub.addLineSeries({ color: "#16a34a", lineWidth: 1.6, title: "VI+" }).setData(chartData.vi_pos);
+        if (chartData.vi_neg?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.6, title: "VI-" }).setData(chartData.vi_neg);
+      });
+    }
+    if (activeTvIndicators.has("kst") && chartData.kst?.length) {
+      createSubChart("KST Oscillator", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8, title: "KST" }).setData(chartData.kst);
+        if (chartData.kst_sig?.length) sub.addLineSeries({ color: "#ef4444", lineWidth: 1.4, title: "Signal" }).setData(chartData.kst_sig);
+      });
+    }
+    if (activeTvIndicators.has("fi") && chartData.fi?.length) {
+      createSubChart("Force Index (13일 세력지수)", (sub) => {
+        sub.addLineSeries({ color: "#d97706", lineWidth: 1.8, title: "FI" }).setData(chartData.fi);
+      });
+    }
   }
 
   // 타임프레임 버튼 클릭 (1분/5분/10분/30분/60분/일봉/주봉/월봉)
@@ -896,7 +1048,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 실시간 지표 검색/추가 드롭다운
+  // 실시간 지표 검색/추가 드롭다운 (30종+ 및 맞춤 MA/EMA N일 지원)
   function showIndicatorSuggestions(queryText) {
     const q = (queryText || "").trim().toLowerCase();
     const matches = TV_INDICATOR_CATALOG.filter((item) => {
@@ -904,13 +1056,32 @@ document.addEventListener("DOMContentLoaded", () => {
       return item.name.toLowerCase().includes(q) || item.keywords.includes(q);
     });
 
+    // 예: "ma 100", "ma100", "ema 50" 입력 시 동적 맞춤 이평선 제안
+    const customCandidates = [];
+    const customMatch = q.match(/^(ma|ema)\s*(\d{1,3})$/);
+    if (customMatch) {
+      const kind = customMatch[1].toLowerCase();
+      const period = Number(customMatch[2]);
+      if (period >= 2 && period <= 200) {
+        const customId = `custom_${kind}_${period}`;
+        if (!TV_INDICATOR_CATALOG.some((x) => x.id === `${kind}${period}`)) {
+          customCandidates.push({
+            id: customId,
+            name: `${kind.toUpperCase()}${period} (${period}일 맞춤 이평선 추가)`,
+            mode: "overlay",
+          });
+        }
+      }
+    }
+
+    const finalList = [...customCandidates, ...matches];
     tvIndSearchList.innerHTML = "";
-    if (matches.length === 0) {
+    if (finalList.length === 0) {
       tvIndSearchList.classList.add("hidden");
       return;
     }
 
-    matches.forEach((item) => {
+    finalList.forEach((item) => {
       const li = document.createElement("li");
       li.className = "autocomplete-item";
       const isAdded = activeTvIndicators.has(item.id);
