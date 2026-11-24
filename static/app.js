@@ -2226,6 +2226,73 @@ document.addEventListener("DOMContentLoaded", () => {
     t4MarketBar.textContent = `Binance USDT 현물·선물 실시간 · 환율 ${kimchi.usd_krw ? formatNumber(kimchi.usd_krw, "원") : "-"}`;
     t4SummaryCard.classList.remove("hidden");
 
+    // 2-1) CoinStats 스타일 공포·탐욕 게이지 + 어제/지난주/지난달 비교
+    const fngScoreEl = document.getElementById("t4FngScore");
+    const fngLabelEl = document.getElementById("t4FngLabel");
+    const fngBadgeEl = document.getElementById("t4FngBadge");
+    const fngNeedleEl = document.getElementById("t4FngNeedle");
+    const fngHistEl = document.getElementById("t4FngHistory");
+    if (fngScoreEl && fgVal !== undefined) {
+      const clamped = Math.max(0, Math.min(100, Number(fgVal)));
+      const deg = -90 + (clamped / 100) * 180;
+      fngNeedleEl?.setAttribute("transform", `rotate(${deg.toFixed(1)} 120 118)`);
+      fngScoreEl.textContent = String(clamped);
+      fngLabelEl.textContent = `${fng.classification_kr || "-"} (${fng.classification || "-"})`;
+      const clsKey = clamped <= 24 ? "efear" : clamped <= 44 ? "fear" : clamped <= 55 ? "neutral" : clamped <= 74 ? "greed" : "egreed";
+      fngBadgeEl.textContent = fng.classification_kr || "-";
+      fngBadgeEl.className = `t4-fng-badge ${clsKey}`;
+      const histItems = [
+        { label: "어제", data: fng.yesterday },
+        { label: "지난주", data: fng.last_week },
+        { label: "지난달", data: fng.last_month },
+      ];
+      fngHistEl.innerHTML = histItems
+        .map((h) => `
+          <div class="t4-fng-hist-pill">
+            <span class="h-label">${h.label}</span>
+            <span class="h-val">${h.data?.value ?? "-"}</span>
+            <span class="h-cls">${h.data?.classification_kr ?? "-"}</span>
+          </div>
+        `)
+        .join("");
+    }
+
+    // 2-2) 비트코인 도미넌스 & 전체 시가총액
+    const dom = coinData.btc_dominance || {};
+    const domMcapBadge = document.getElementById("t4DomMcapBadge");
+    const domContentEl = document.getElementById("t4DomContent");
+    if (domContentEl && dom.available) {
+      const mcapT = dom.total_market_cap_usd >= 1e12
+        ? `$${(dom.total_market_cap_usd / 1e12).toFixed(2)}T`
+        : formatUsdCompact(dom.total_market_cap_usd);
+      domMcapBadge.textContent = `전체 시총 ${mcapT}`;
+      const chg = dom.market_cap_change_24h_pct ?? 0;
+      const chgClass = chg > 0 ? "up" : chg < 0 ? "down" : "flat";
+      domContentEl.innerHTML = `
+        <div class="t4-dom-main">
+          <div>
+            <span class="t4-metric-label">BTC 도미넌스</span>
+            <div class="t4-dom-btc-big">${dom.btc_dominance}%</div>
+          </div>
+          <div class="t4-dom-mcap-chg ${chgClass}">전체 시총 24h ${chg > 0 ? "+" : ""}${chg}%</div>
+        </div>
+        <div class="t4-dom-bar">
+          <div class="t4-dom-seg-btc" style="width: ${dom.btc_dominance}%;" title="BTC ${dom.btc_dominance}%"></div>
+          <div class="t4-dom-seg-eth" style="width: ${dom.eth_dominance}%;" title="ETH ${dom.eth_dominance}%"></div>
+          <div class="t4-dom-seg-alt" style="width: ${dom.alt_dominance}%;" title="기타 알트 ${dom.alt_dominance}%"></div>
+        </div>
+        <div class="t4-dom-legend">
+          <div class="t4-dom-leg-item"><span class="t4-dom-dot" style="background:#f59e0b;"></span>BTC<strong>${dom.btc_dominance}%</strong></div>
+          <div class="t4-dom-leg-item"><span class="t4-dom-dot" style="background:#6366f1;"></span>ETH<strong>${dom.eth_dominance}%</strong></div>
+          <div class="t4-dom-leg-item"><span class="t4-dom-dot" style="background:#94a3b8;"></span>기타 알트<strong>${dom.alt_dominance}%</strong></div>
+        </div>
+        <div class="t4-dom-interp">💡 ${dom.interpretation || "-"}</div>
+      `;
+    } else if (domContentEl) {
+      domMcapBadge.textContent = "조회 불가";
+      domContentEl.innerHTML = `<div class="t4-metric-sub">비트코인 도미넌스 데이터를 불러오지 못했습니다.</div>`;
+    }
+
     // 3) 롱/숏 청산 로드맵 렌더링
     const liqCard = document.getElementById("t4LiquidationCard");
     const liq = coinData.liquidation_roadmap;

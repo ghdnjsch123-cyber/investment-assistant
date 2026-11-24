@@ -386,32 +386,91 @@ def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str
     return result
 
 
-def fetch_fear_and_greed() -> dict[str, Any]:
-    """Alternative.me 가상자산 공포·탐욕 지수 조회."""
+_GLOBAL_CACHE: dict[str, Any] = {"ts": 0.0, "data": {}}
+
+
+def fetch_btc_dominance() -> dict[str, Any]:
+    """CoinGecko Global API로 비트코인 도미넌스, 이더리움 비중, 전체 시가총액 조회 (5분 캐시)."""
+    now = time.time()
+    if _GLOBAL_CACHE["data"] and (now - _GLOBAL_CACHE["ts"] < 300):
+        return _GLOBAL_CACHE["data"]
+
     try:
-        resp = requests.get(FNG_API_URL, params={"limit": 2}, headers=_HEADERS, timeout=6)
+        resp = requests.get(
+            "https://api.coingecko.com/api/v3/global",
+            headers=_HEADERS,
+            timeout=8,
+        )
+        resp.raise_for_status()
+        d = resp.json().get("data") or {}
+        mcp = d.get("market_cap_percentage") or {}
+        btc_dom = round(float(mcp.get("btc") or 0), 2)
+        eth_dom = round(float(mcp.get("eth") or 0), 2)
+        alt_dom = round(max(0.0, 100.0 - btc_dom - eth_dom), 2)
+        total_mcap = float((d.get("total_market_cap") or {}).get("usd") or 0)
+        mcap_chg_24h = round(float(d.get("market_cap_change_percentage_24h_usd") or 0), 2)
+
+        if btc_dom >= 55.0:
+            interp = "비트코인 독주 구간 (자금이 BTC에 집중 → 알트코인 상대 약세 유의)"
+        elif btc_dom <= 48.0:
+            interp = "알트코인 강세 구간 (BTC 비중 하락 → 알트코인 순환매 활발)"
+        else:
+            interp = "균형 구간 (BTC와 주요 알트코인 동반 수급)"
+
+        result = {
+            "available": True,
+            "btc_dominance": btc_dom,
+            "eth_dominance": eth_dom,
+            "alt_dominance": alt_dom,
+            "total_market_cap_usd": round(total_mcap, 0),
+            "market_cap_change_24h_pct": mcap_chg_24h,
+            "interpretation": interp,
+        }
+        _GLOBAL_CACHE["ts"] = now
+        _GLOBAL_CACHE["data"] = result
+        return result
+    except Exception:
+        return _GLOBAL_CACHE["data"] or {"available": False}
+
+
+def fetch_fear_and_greed() -> dict[str, Any]:
+    """Alternative.me 가상자산 공포·탐욕 지수 조회 (오늘/어제/지난주/지난달 포함)."""
+    cls_map = {
+        "Extreme Fear": "극단적 공포",
+        "Fear": "공포",
+        "Neutral": "중립",
+        "Greed": "탐욕",
+        "Extreme Greed": "극단적 탐욕",
+    }
+
+    def _parse_row(row: dict[str, Any]) -> dict[str, Any]:
+        val = int(row.get("value", 50))
+        raw_cls = str(row.get("value_classification") or "Neutral")
+        return {
+            "value": val,
+            "classification": raw_cls,
+            "classification_kr": cls_map.get(raw_cls, raw_cls),
+        }
+
+    try:
+        resp = requests.get(FNG_API_URL, params={"limit": 31}, headers=_HEADERS, timeout=6)
         resp.raise_for_status()
         rows = resp.json().get("data") or []
         if not rows:
             return {}
-        today = rows[0]
-        yesterday = rows[1] if len(rows) > 1 else today
-        val = int(today.get("value", 50))
-        prev = int(yesterday.get("value", val))
-        cls_map = {
-            "Extreme Fear": "극단적 공포",
-            "Fear": "공포",
-            "Neutral": "중립",
-            "Greed": "탐욕",
-            "Extreme Greed": "극단적 탐욕",
-        }
-        raw_cls = str(today.get("value_classification") or "Neutral")
+        today = _parse_row(rows[0])
+        yesterday = _parse_row(rows[1] if len(rows) > 1 else rows[0])
+        last_week = _parse_row(rows[7] if len(rows) > 7 else rows[-1])
+        last_month = _parse_row(rows[30] if len(rows) > 30 else rows[-1])
         return {
-            "value": val,
-            "prev_value": prev,
-            "diff": val - prev,
-            "classification": raw_cls,
-            "classification_kr": cls_map.get(raw_cls, raw_cls),
+            "value": today["value"],
+            "prev_value": yesterday["value"],
+            "diff": today["value"] - yesterday["value"],
+            "classification": today["classification"],
+            "classification_kr": today["classification_kr"],
+            "yesterday": yesterday,
+            "last_week": last_week,
+            "last_month": last_month,
         }
     except Exception:
         return {}
@@ -729,6 +788,7 @@ def collect_coin_data(query: str) -> dict[str, Any]:
     )
     kimchi = fetch_kimchi_premium(symbol, binance_usdt_price=spot["price"])
     fear_greed = fetch_fear_and_greed()
+    btc_dominance = fetch_btc_dominance()
     tv_chart = fetch_coin_chart_with_indicators(usdt_symbol, timeframe="day", market_type="spot")
     technical = _summarize_technical(tv_chart)
     news = fetch_coin_news(symbol, info["korean_name"])
@@ -746,6 +806,7 @@ def collect_coin_data(query: str) -> dict[str, Any]:
         "kimchi": kimchi,
         "fut_spot_vol_ratio": fut_spot_vol_ratio,
         "fear_greed": fear_greed,
+        "btc_dominance": btc_dominance,
         "technical": technical,
         "tv_chart": tv_chart,
         "news": news,

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=17" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=18" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -451,6 +451,48 @@
             </div>
           </div>
 
+          <!-- CoinStats 스타일 공포·탐욕 게이지 + 비트코인 도미넌스 -->
+          <div id="t4SentimentDomCard" class="t4-sent-dom-grid">
+            <div class="t4-fng-panel">
+              <div class="t4-panel-head">
+                <span class="t4-panel-title">😨 암호화폐 공포 · 탐욕 지수</span>
+                <span id="t4FngBadge" class="t4-fng-badge">-</span>
+              </div>
+              <div class="t4-fng-gauge-wrap">
+                <svg id="t4FngSvg" class="t4-fng-svg" viewBox="0 0 240 142" aria-label="공포 탐욕 지수 게이지">
+                  <!-- 5-zone semi-circle arcs (center 120, 118, radius 92) -->
+                  <path d="M 28 118 A 92 92 0 0 1 45.6 63.9" fill="none" stroke="#ea3943" stroke-width="16" stroke-linecap="round" />
+                  <path d="M 49.5 59.0 A 92 92 0 0 1 97.5 28.8" fill="none" stroke="#f97316" stroke-width="16" />
+                  <path d="M 103.5 27.5 A 92 92 0 0 1 136.5 27.5" fill="none" stroke="#eab308" stroke-width="16" />
+                  <path d="M 142.5 28.8 A 92 92 0 0 1 190.5 59.0" fill="none" stroke="#84cc16" stroke-width="16" />
+                  <path d="M 194.4 63.9 A 92 92 0 0 1 212 118" fill="none" stroke="#16a34a" stroke-width="16" stroke-linecap="round" />
+                  <!-- Needle -->
+                  <g id="t4FngNeedle" transform="rotate(-90 120 118)">
+                    <line x1="120" y1="118" x2="120" y2="38" stroke="#0f172a" stroke-width="3.5" stroke-linecap="round" />
+                    <circle cx="120" cy="118" r="7" fill="#0f172a" />
+                    <circle cx="120" cy="118" r="3" fill="#ffffff" />
+                  </g>
+                  <text x="24" y="139" font-size="10" fill="#64748b" font-weight="600">0</text>
+                  <text x="113" y="14" font-size="10" fill="#64748b" font-weight="600">50</text>
+                  <text x="203" y="139" font-size="10" fill="#64748b" font-weight="600">100</text>
+                </svg>
+                <div class="t4-fng-center-val">
+                  <strong id="t4FngScore">-</strong>
+                  <span id="t4FngLabel">데이터 로딩</span>
+                </div>
+              </div>
+              <div id="t4FngHistory" class="t4-fng-history"></div>
+            </div>
+
+            <div class="t4-dom-panel">
+              <div class="t4-panel-head">
+                <span class="t4-panel-title">👑 비트코인 도미넌스 &amp; 시장 점유율</span>
+                <span id="t4DomMcapBadge" class="t4-panel-badge dom">시총 -</span>
+              </div>
+              <div id="t4DomContent" class="t4-dom-content"></div>
+            </div>
+          </div>
+
           <div id="t4BeginnerCards" class="t1-beginner-grid"></div>
         </div>
 
@@ -506,6 +548,6 @@
     </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=17"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=18"></script>
 </body>
 </html>
