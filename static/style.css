@@ -1384,3 +1384,120 @@ body {
   background: #fef3c7;
   color: #b45309;
 }
+
+
+/* === Tab 4: Spot vs Futures & Funding Rate Panels === */
+.t4-chart-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.t4-mkt-type-group {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.t4-spot-futures-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .t4-spot-futures-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.t4-market-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
+.t4-spot-panel {
+  border-top: 3px solid #2563eb;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 48%);
+}
+
+.t4-futures-panel {
+  border-top: 3px solid #f59e0b;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 48%);
+}
+
+.t4-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.t4-panel-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.t4-panel-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.t4-panel-badge.spot {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.t4-panel-badge.futures {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.t4-panel-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.t4-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.t4-metric-label {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.t4-metric-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.t4-metric-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.t4-funding-pos {
+  color: #dc2626;
+}
+
+.t4-funding-neg {
+  color: #2563eb;
+}
+
+.t4-funding-neutral {
+  color: #0f172a;
+}

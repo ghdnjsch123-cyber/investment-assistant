@@ -1802,6 +1802,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const t4TvNotice = document.getElementById("t4TvNotice");
   const t4TvSubchartsArea = document.getElementById("t4TvSubchartsArea");
   const t4TfBtns = document.querySelectorAll(".t4-tf-btn");
+  const t4MktBtns = document.querySelectorAll(".t4-mkt-btn");
   const t4IndSearchInput = document.getElementById("t4IndSearchInput");
   const t4IndSearchList = document.getElementById("t4IndSearchList");
   const t4ActiveIndTags = document.getElementById("t4ActiveIndTags");
@@ -1819,10 +1820,26 @@ document.addEventListener("DOMContentLoaded", () => {
   let t4LastMarket = "";
   let t4CurrentMeta = null;
   let t4CurrentChartData = null;
+  let t4CurrentTf = "day";
+  let t4CurrentMarketType = "spot";
   let t4TvChartInst = null;
   let t4TvSubChartInsts = [];
   let t4AcTimer = null;
   const activeT4Indicators = new Set(["ma20", "ma60"]);
+
+  function formatUsdPrice(val, dec = 2) {
+    if (val === null || val === undefined || Number.isNaN(Number(val))) return "-";
+    return "$" + Number(val).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  }
+
+  function formatUsdCompact(val) {
+    if (val === null || val === undefined || Number.isNaN(Number(val))) return "-";
+    const n = Number(val);
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+    return `$${n.toFixed(0)}`;
+  }
 
   function resetTab4Chat(
     notice = "위에서 코인을 선택해 실시간 차트와 종합 리포트를 확인하신 뒤, 궁금한 점을 아래에서 질문해 주세요!"
@@ -1874,11 +1891,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function drawT4TvChart(chartData) {
     if (!window.LightweightCharts || !chartData || !chartData.ohlcv || chartData.ohlcv.length === 0) return;
 
-    const meta = t4CurrentMeta || { market: chartData.code, name: chartData.code };
+    const meta = t4CurrentMeta || { market: chartData.usdt_symbol || chartData.code, name: chartData.korean_name || chartData.code };
     const ohlcv = chartData.ohlcv;
-    const isSmall = ohlcv[ohlcv.length - 1].close < 1000;
+    const dec = Number.isInteger(chartData.price_dec) ? chartData.price_dec : 2;
+    const minMove = Number((1 / Math.pow(10, dec)).toFixed(dec));
+    const mktLabel = chartData.market_type === "futures" ? "선물 Futures" : "현물 Spot";
 
-    t4TvTitle.textContent = `📈 ${meta.name} (${meta.market}) 실시간 캔들 · 거래량 차트 (${chartData.timeframe})`;
+    t4TvTitle.textContent = `📈 ${meta.name} (${meta.market}) ${mktLabel} 차트 (${chartData.timeframe})`;
 
     if (t4TvChartInst) { t4TvChartInst.remove(); t4TvChartInst = null; }
     t4TvSubChartInsts.forEach((inst) => inst.remove());
@@ -1905,9 +1924,7 @@ document.addEventListener("DOMContentLoaded", () => {
       borderDownColor: "#3b82f6",
       wickUpColor: "#ef4444",
       wickDownColor: "#3b82f6",
-      priceFormat: isSmall
-        ? { type: "price", precision: 2, minMove: 0.01 }
-        : { type: "price", precision: 0, minMove: 1 },
+      priceFormat: { type: "price", precision: dec, minMove },
     });
     candleSeries.setData(ohlcv.map((d) => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
 
@@ -1933,7 +1950,7 @@ document.addEventListener("DOMContentLoaded", () => {
     activeT4Indicators.forEach((id) => {
       const m = getIndicatorMeta(id);
       if (m && m.customKind) {
-        const sData = computeCustomMaSeries(ohlcv, m.customKind, m.period, isSmall ? 2 : 0);
+        const sData = computeCustomMaSeries(ohlcv, m.customKind, m.period, dec);
         if (sData.length) {
           chart.addLineSeries({ color: customColors[cIdx++ % customColors.length], lineWidth: 1.6, title: `${m.customKind}${m.period}` }).setData(sData);
         }
@@ -1976,8 +1993,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!bar) return;
       const dateLabel = labelMap.get(bar.time) || bar.time;
       t4TvOhlcvLegend.textContent =
-        `${dateLabel} | 시 ${formatNumber(bar.open, "원")} · 고 ${formatNumber(bar.high, "원")} · ` +
-        `저 ${formatNumber(bar.low, "원")} · 종 ${formatNumber(bar.close, "원")} | 거래량 ${formatNumber(vol)}`;
+        `${dateLabel} | 시 ${formatUsdPrice(bar.open, dec)} · 고 ${formatUsdPrice(bar.high, dec)} · ` +
+        `저 ${formatUsdPrice(bar.low, dec)} · 종 ${formatUsdPrice(bar.close, dec)} | 거래량 ${formatNumber(vol)}`;
     };
     updateLegend(last, last.volume);
 
@@ -2064,16 +2081,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderTab4Summary(coinData) {
-    const snap = coinData.snapshot || {};
+    const info = coinData.coin_info || {};
+    const spot = coinData.spot || {};
+    const fut = coinData.futures || {};
+    const kimchi = coinData.kimchi || {};
     const fng = coinData.fear_greed || {};
     const tech = coinData.technical || {};
+    const dec = Number.isInteger(coinData.price_dec) ? coinData.price_dec : 2;
 
-    document.getElementById("t4AssetBadge").textContent = coinData.warning ? "유의종목" : "업비트 KRW";
-    document.getElementById("t4SummaryName").textContent = `${coinData.name} (${coinData.market})`;
-    document.getElementById("t4SummaryPrice").textContent = formatNumber(snap.current_price, "원");
+    document.getElementById("t4AssetBadge").textContent = "Binance USDT";
+    document.getElementById("t4SummaryName").textContent = `${info.korean_name || info.symbol} (${info.usdt_symbol || "-"})`;
+    document.getElementById("t4SummaryPrice").textContent = formatUsdPrice(spot.price, dec);
 
     const changeEl = document.getElementById("t4SummaryChange");
-    const rate = snap.change_rate;
+    const rate = spot.change_pct;
     if (rate !== null && rate !== undefined) {
       const sign = rate > 0 ? "▲" : rate < 0 ? "▼" : "";
       const plus = rate > 0 ? "+" : "";
@@ -2081,11 +2102,70 @@ document.addEventListener("DOMContentLoaded", () => {
       changeEl.className = `t1-summary-change ${rate > 0 ? "up" : rate < 0 ? "down" : "flat"}`;
     }
 
-    const pos = snap.position_52w;
+    const pos = tech.range_position_pct;
     if (pos !== null && pos !== undefined) {
       document.getElementById("t4RangeLabel").textContent =
-        `1년(52주) 중 현재 위치: ${pos}% (최저 ${formatNumber(snap.low52)} ~ 최고 ${formatNumber(snap.high52)})`;
+        `일봉 구간 위치: ${pos}% (저가 ${formatUsdPrice(tech.period_low, dec)} ~ 고가 ${formatUsdPrice(tech.period_high, dec)})`;
       document.getElementById("t4RangeFill").style.width = `${pos}%`;
+    }
+
+    // 1) 현물(Spot) 분리 패널 렌더링
+    const spotMetricsEl = document.getElementById("t4SpotMetrics");
+    document.getElementById("t4SpotBadge").textContent = spot.available ? "현물 실시간" : "미지원";
+    spotMetricsEl.innerHTML = `
+      <div class="t4-metric-item">
+        <span class="t4-metric-label">현물 현재가 (Spot)</span>
+        <span class="t4-metric-value">${formatUsdPrice(spot.price, dec)}</span>
+        <span class="t4-metric-sub">24h 등락 ${spot.change_pct > 0 ? "+" : ""}${spot.change_pct ?? "-"}%</span>
+      </div>
+      <div class="t4-metric-item">
+        <span class="t4-metric-label">24h 현물 거래대금</span>
+        <span class="t4-metric-value">${formatUsdCompact(spot.volume_24h_usdt)}</span>
+        <span class="t4-metric-sub">${formatNumber(Math.round(spot.volume_24h_coin || 0))} ${info.symbol || ""}</span>
+      </div>
+      <div class="t4-metric-item">
+        <span class="t4-metric-label">24h 고가 / 저가</span>
+        <span class="t4-metric-value">${formatUsdPrice(spot.high_24h, dec)}</span>
+        <span class="t4-metric-sub">저가 ${formatUsdPrice(spot.low_24h, dec)}</span>
+      </div>
+      <div class="t4-metric-item">
+        <span class="t4-metric-label">업비트 KRW (참고)</span>
+        <span class="t4-metric-value">${kimchi.available ? formatNumber(kimchi.upbit_krw_price, "원") : "-"}</span>
+        <span class="t4-metric-sub">김프 ${kimchi.premium_pct !== null && kimchi.premium_pct !== undefined ? `${kimchi.premium_pct > 0 ? "+" : ""}${kimchi.premium_pct}%` : "-"}</span>
+      </div>
+    `;
+
+    // 2) 선물(Futures) & 펀딩비 분리 패널 렌더링
+    const futMetricsEl = document.getElementById("t4FuturesMetrics");
+    if (fut.available) {
+      const fr = fut.funding_rate_pct ?? 0;
+      const frClass = fr > 0.005 ? "t4-funding-pos" : fr < -0.005 ? "t4-funding-neg" : "t4-funding-neutral";
+      document.getElementById("t4FuturesBadge").textContent = "무기한 선물";
+      futMetricsEl.innerHTML = `
+        <div class="t4-metric-item">
+          <span class="t4-metric-label">펀딩비 (8시간 / 연환산)</span>
+          <span class="t4-metric-value ${frClass}">${fr > 0 ? "+" : ""}${fr}% <small>(연 ${fut.funding_rate_annual_pct > 0 ? "+" : ""}${fut.funding_rate_annual_pct}%)</small></span>
+          <span class="t4-metric-sub">${fut.funding_bias || "-"}</span>
+        </div>
+        <div class="t4-metric-item">
+          <span class="t4-metric-label">다음 펀딩 정산</span>
+          <span class="t4-metric-value">${fut.next_funding_kst || "-"}</span>
+          <span class="t4-metric-sub">${fut.next_funding_countdown || "-"}</span>
+        </div>
+        <div class="t4-metric-item">
+          <span class="t4-metric-label">미결제약정 (OI)</span>
+          <span class="t4-metric-value">${formatUsdCompact(fut.open_interest_usdt)}</span>
+          <span class="t4-metric-sub">${formatNumber(fut.open_interest_coin)} ${info.symbol || ""}</span>
+        </div>
+        <div class="t4-metric-item">
+          <span class="t4-metric-label">선물 마크가격 / 거래대금</span>
+          <span class="t4-metric-value">${formatUsdPrice(fut.mark_price, dec)}</span>
+          <span class="t4-metric-sub">24h ${formatUsdCompact(fut.volume_24h_usdt)} (현물 대비 ${coinData.fut_spot_vol_ratio ?? "-"}배)</span>
+        </div>
+      `;
+    } else {
+      document.getElementById("t4FuturesBadge").textContent = "미지원";
+      futMetricsEl.innerHTML = `<div class="t4-metric-item" style="grid-column: span 2;"><span class="t4-metric-label">선물 데이터 없음</span><span class="t4-metric-sub">${fut.reason || "바이낸스 USDT 무기한 선물 미상장 종목"}</span></div>`;
     }
 
     const fgVal = fng.value;
@@ -2100,36 +2180,36 @@ document.addEventListener("DOMContentLoaded", () => {
               ? "중립적인 투자 심리"
               : "탐욕 과열 구간 (추격 매수 주의)";
 
-    const kimp = coinData.kimchi_premium;
+    const kimp = kimchi.premium_pct;
     const kimpHint =
       kimp === null || kimp === undefined
         ? "해외 시세 비교 불가"
         : kimp > 3
-          ? "해외보다 비싸게 거래 중 (과열 주의)"
+          ? "국내 가격이 해외보다 비쌈 (과열 주의)"
           : kimp >= -1
-            ? "해외 시세와 거의 비슷한 정상 범위"
-            : "해외보다 싸게 거래 중 (역프리미엄)";
+            ? "국내·해외 시세 균형 범위"
+            : "국내 가격이 해외보다 저렴함 (역프리미엄)";
 
     const cards = [
       {
-        title: "오늘 시장 심리 (공포·탐욕)",
+        title: "시장 심리 (공포·탐욕 지수)",
         val: fgVal !== undefined ? `${fgVal}점 (${fng.classification_kr})` : "-",
         hint: fgHint,
       },
       {
-        title: "24시간 거래대금",
-        val: formatMarketCap(snap.trade_value_24h),
-        hint: `24시간 거래량 ${formatNumber(snap.volume_24h)} ${coinData.symbol}`,
-      },
-      {
-        title: "김치프리미엄 (바이낸스 대비)",
+        title: "김치프리미엄 (원/달러 기준)",
         val: kimp !== null && kimp !== undefined ? `${kimp > 0 ? "+" : ""}${kimp}%` : "-",
-        hint: kimpHint,
+        hint: `${kimpHint} · 환율 ${kimchi.usd_krw ? formatNumber(kimchi.usd_krw, "원") : "-"}`,
       },
       {
-        title: "기술적 위치 (RSI / 볼린저)",
-        val: `RSI ${tech.rsi14 ?? "-"} / 위치 ${tech.bb_position_pct ?? "-"}%`,
-        hint: coinData.warning ? "⚠️ 거래소 투자유의종목 지정 상태" : "정상 거래 지원 코인",
+        title: "선물 vs 현물 거래량 비율",
+        val: coinData.fut_spot_vol_ratio ? `${coinData.fut_spot_vol_ratio}배` : "-",
+        hint: coinData.fut_spot_vol_ratio >= 5 ? "선물 레버리지 주도 시장 (변동성 유의)" : "현물·선물 균형 수급",
+      },
+      {
+        title: "일봉 기술지표 (RSI14 / MA20)",
+        val: `RSI ${tech.rsi14 ?? "-"} / MA20 ${formatUsdPrice(tech.ma20, dec)}`,
+        hint: tech.rsi14 !== null && tech.rsi14 <= 30 ? "단기 과매도 구간 진입" : tech.rsi14 >= 70 ? "단기 과매수 구간 주의" : "중립 기술 구간",
       },
     ];
 
@@ -2142,17 +2222,16 @@ document.addEventListener("DOMContentLoaded", () => {
       gridEl.appendChild(div);
     });
 
-    const env = coinData.market_env || {};
-    if (env.usdkrw) {
-      t4MarketBar.textContent = `원/달러 환율 ${formatNumber(env.usdkrw.value)}원 · 업비트 실시간`;
-    }
-
+    t4MarketBar.textContent = `Binance USDT 현물·선물 실시간 · 환율 ${kimchi.usd_krw ? formatNumber(kimchi.usd_krw, "원") : "-"}`;
     t4SummaryCard.classList.remove("hidden");
 
     if (coinData.tv_chart) {
-      t4CurrentMeta = { market: coinData.market, name: coinData.name };
+      t4CurrentMeta = { market: info.usdt_symbol, name: info.korean_name || info.symbol };
       t4CurrentChartData = coinData.tv_chart;
+      t4CurrentTf = "day";
+      t4CurrentMarketType = "spot";
       t4TfBtns.forEach((b) => b.classList.toggle("active", b.dataset.tf === "day"));
+      t4MktBtns.forEach((b) => b.classList.toggle("active", b.dataset.mkt === "spot"));
       t4TvNotice.classList.add("hidden");
       t4TradingViewCard.classList.remove("hidden");
       renderT4ActiveTags();
@@ -2204,9 +2283,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error(data.error || "코인 분석 요청에 실패했습니다.");
 
       t4ConversationId = data.conversation_id || t4ConversationId;
-      const resolvedMkt = data.coin_data?.market || query;
+      const cInfo = data.coin_data?.coin_info || {};
+      const resolvedMkt = cInfo.usdt_symbol || query;
+      const resolvedName = cInfo.korean_name || cInfo.symbol || resolvedMkt;
       t4LastMarket = resolvedMkt;
-      if (data.coin_data?.market) t4MarketInput.value = resolvedMkt;
+      if (cInfo.usdt_symbol) t4MarketInput.value = resolvedMkt;
 
       if (isInitial) {
         setBotFormattedContent(t4ReportBody, data.answer || "응답이 비어 있습니다.");
@@ -2214,7 +2295,7 @@ document.addEventListener("DOMContentLoaded", () => {
         appendChatBubble(
           t4ChatMessages,
           "bot",
-          `${data.coin_data?.name || resolvedMkt} 코인 종합 분석 리포트가 위 패널에 완성되었습니다! 궁금한 점을 아래에서 질문해 주세요.`
+          `${resolvedName} (${resolvedMkt}) 현물·선물·펀딩비 종합 분석 리포트가 위 패널에 완성되었습니다! 궁금한 점을 아래에서 질문해 주세요.`
         );
       } else if (thinkingBubble) {
         setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
@@ -2222,9 +2303,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (data.coin_data) {
-        const s = data.coin_data.snapshot || {};
+        const s = data.coin_data.spot || {};
+        const fut = data.coin_data.futures || {};
+        const dec = Number.isInteger(data.coin_data.price_dec) ? data.coin_data.price_dec : 2;
+        const frStr = fut.available ? ` · 펀딩비 ${fut.funding_rate_pct > 0 ? "+" : ""}${fut.funding_rate_pct}%` : "";
         t4ContextBar.textContent =
-          `수집 근거 반영됨: ${data.coin_data.name} (${resolvedMkt}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+          `수집 근거 반영됨: ${resolvedName} (${resolvedMkt}) · 현물 ${formatUsdPrice(s.price, dec)}${frStr} · ` +
           `공포·탐욕 ${data.coin_data.fear_greed?.value ?? "-"}점 · 뉴스 ${(data.coin_data.news || []).length}건`;
         t4ContextBar.classList.remove("hidden");
         renderTab4Summary(data.coin_data);
@@ -2302,26 +2386,42 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  async function reloadT4Chart() {
+    if (!t4CurrentMeta?.market) return;
+    t4TvNotice.classList.add("hidden");
+    try {
+      const res = await fetch("/api/coin/chart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          market: t4CurrentMeta.market,
+          timeframe: t4CurrentTf,
+          market_type: t4CurrentMarketType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "코인 차트 조회 실패");
+      t4CurrentChartData = data;
+      drawT4TvChart(data);
+    } catch (err) {
+      t4TvNotice.textContent = `안내: ${err.message}`;
+      t4TvNotice.classList.remove("hidden");
+    }
+  }
+
   t4TfBtns.forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!t4CurrentMeta?.market) return;
-      const tf = btn.dataset.tf;
+    btn.addEventListener("click", () => {
+      t4CurrentTf = btn.dataset.tf;
       t4TfBtns.forEach((b) => b.classList.toggle("active", b === btn));
-      t4TvNotice.classList.add("hidden");
-      try {
-        const res = await fetch("/api/coin/chart", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ market: t4CurrentMeta.market, timeframe: tf }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "코인 차트 조회 실패");
-        t4CurrentChartData = data;
-        drawT4TvChart(data);
-      } catch (err) {
-        t4TvNotice.textContent = `안내: ${err.message}`;
-        t4TvNotice.classList.remove("hidden");
-      }
+      reloadT4Chart();
+    });
+  });
+
+  t4MktBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      t4CurrentMarketType = btn.dataset.mkt || "spot";
+      t4MktBtns.forEach((b) => b.classList.toggle("active", b === btn));
+      reloadT4Chart();
     });
   });
 

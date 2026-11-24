@@ -435,14 +435,17 @@ def coin_search():
 
 @app.route("/api/coin/chart", methods=["POST"])
 def coin_timeframe_chart():
-    """[탭4] 업비트 분봉/일/주/월봉 캔들 및 32종+ 기술지표를 반환합니다."""
+    """[탭4] 바이낸스 USDT 현물/선물 분봉/일/주/월봉 캔들 및 32종+ 기술지표를 반환합니다."""
     payload = request.get_json(silent=True) or {}
     raw_query = (payload.get("market") or "").strip()
     timeframe = (payload.get("timeframe") or "day").strip()
+    market_type = (payload.get("market_type") or "spot").strip()
 
     try:
         info = resolve_coin_market(raw_query)
-        chart_data = fetch_coin_chart_with_indicators(info["market"], timeframe=timeframe)
+        chart_data = fetch_coin_chart_with_indicators(
+            info["market"], timeframe=timeframe, market_type=market_type
+        )
         return jsonify(chart_data), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -453,7 +456,7 @@ def coin_timeframe_chart():
 
 @app.route("/api/coin/analysis", methods=["POST"])
 def coin_analysis():
-    """[탭4] 코인 종합 데이터 수집 후 Dify 일반 챗봇 ①로 심층 리포트 및 후속 질문을 처리합니다."""
+    """[탭4] 바이낸스 USDT 현물/선물·펀딩비 코인 종합 데이터 수집 후 Dify 일반 챗봇 ①로 심층 리포트 및 후속 질문을 처리합니다."""
     payload = request.get_json(silent=True) or {}
     raw_query = (payload.get("market") or "").strip()
     question = (payload.get("question") or "").strip()
@@ -478,29 +481,33 @@ def coin_analysis():
         coin_data = collect_coin_data(raw_query)
         tv_chart = coin_data.pop("tv_chart", None)
         coin_json = json.dumps(coin_data, ensure_ascii=False)
-        coin_name = coin_data.get("name", "")
-        market = coin_data.get("market", "")
+        coin_info = coin_data.get("coin_info") or {}
+        coin_name = coin_info.get("korean_name") or coin_info.get("symbol") or raw_query
+        market = coin_info.get("usdt_symbol") or raw_query
 
         if not question:
             question = (
-                "당신은 암호화폐 초보자에게도 친절하게 설명하는 가상자산 수석 애널리스트입니다. "
-                f"아래 실시간 수집 데이터(JSON)만을 근거로 {coin_name}({market}) 코인에 대한 종합 분석 리포트를 작성해 주세요.\n"
-                "어려운 용어(김치프리미엄, 공포탐욕지수, RSI, 볼린저밴드 등)가 나올 때마다 반드시 괄호 안에 초보자용 쉬운 비유를 붙여주세요.\n\n"
+                "당신은 암호화폐 초보자에게도 친절하게 설명하는 가상자산 현물·선물 수석 애널리스트입니다. "
+                f"아래 바이낸스 USDT 실시간 수집 데이터(JSON)만을 근거로 {coin_name}({market}) 코인에 대한 종합 분석 리포트를 작성해 주세요.\n"
+                "어려운 용어(펀딩비, 미결제약정, 베이시스, 김치프리미엄, 공포탐욕지수, RSI 등)가 나올 때마다 반드시 괄호 안에 초보자용 쉬운 비유를 붙여주세요.\n\n"
                 "다음 구조로 깔끔하게 작성해 주세요:\n"
                 "### 1. 📊 핵심 답변 요약\n"
-                "- 현재 가격 흐름, 52주 내 위치(position_52w%), 시장 심리를 3줄 이내로 명쾌하게 요약\n"
-                "### 2. 😨 시장 심리 및 수급 (공포·탐욕 지수 & 김치프리미엄)\n"
-                "- 공포·탐욕 지수(fear_greed), 김치프리미엄(kimchi_premium%), 24시간 거래대금(trade_value_24h), 유의종목 여부(warning) 풀이\n"
-                "### 3. 📈 가격 추이 및 기술지표 분석\n"
-                "- technical 데이터(20일/60일 이동평균선, RSI14, MACD, 볼린저밴드 위치%)를 바탕으로 단기 과매도/과열 여부를 쉽게 설명\n"
-                "### 4. 📰 최신 코인 뉴스 모멘텀 및 이슈\n"
-                "- 제공된 최신 뉴스 5건 기반 호재·악재 정리\n"
-                "### 5. ⚖️ 매수 vs 매도 우위 판단 (직접 결론)\n"
-                "- 수집된 데이터를 종합해 현재 **[매수 우위 / 중립 / 매도(관망) 우위]** 중 어느 쪽이 유리한지 직접 결론을 내리고, 매수 우위 근거 vs 매도(리스크) 근거를 숫자로 대비해 제시해 주세요."
+                "- 현재 USDT 현물 가격 흐름, 구간 위치(range_position_pct%), 시장 심리를 3줄 이내로 명쾌하게 요약\n"
+                "### 2. 🏦 현물 vs ⚡ 선물 시장 & 펀딩비 분석\n"
+                "- **현물(Spot)**: 현재가($), 24시간 등락률, 24시간 거래대금(USDT) 정리\n"
+                "- **선물(Futures)**: 마크가격/인덱스가격, 베이시스(basis_pct%), **펀딩비(funding_rate_pct%, 연환산, 롱/숏 쏠림)**, **미결제약정(open_interest_usdt)**, 현물 대비 선물 거래대금 비율(fut_spot_vol_ratio배)을 초보자도 이해하기 쉽게 해설\n"
+                "### 3. 😨 시장 심리 및 김치프리미엄\n"
+                "- 공포·탐욕 지수(fear_greed), 업비트 기준 김치프리미엄(kimchi.premium_pct%) 풀이\n"
+                "### 4. 📈 가격 추이 및 기술지표 분석\n"
+                "- technical 데이터(20일/60일 이동평균선, RSI14, MACD, 볼린저밴드)를 바탕으로 단기 과매도/과열 여부를 쉽게 설명\n"
+                "### 5. 📰 최신 코인 뉴스 모멘텀 및 이슈\n"
+                "- 제공된 최신 뉴스 기반 호재·악재 정리\n"
+                "### 6. ⚖️ 매수 vs 매도 우위 판단 (직접 결론)\n"
+                "- 수집된 현물·선물·펀딩비·기술지표 데이터를 종합해 현재 **[매수 우위 / 중립 / 매도(관망) 우위]** 중 어느 쪽이 유리한지 직접 결론을 내리고, 매수 우위 근거 vs 매도(리스크) 근거를 숫자로 대비해 제시해 주세요."
             )
 
         enriched_query = (
-            f"[코인 심층 분석 요청: {coin_name} ({market})]\n"
+            f"[코인 현물·선물 심층 분석 요청: {coin_name} ({market})]\n"
             f"반드시 아래 실시간 수집 데이터(JSON)에 포함된 팩트와 숫자만을 근거로 답변하세요.\n\n"
             f"--- 수집 데이터(JSON) ---\n{coin_json}\n\n"
             f"--- 요청 내용 ---\n{question}"
