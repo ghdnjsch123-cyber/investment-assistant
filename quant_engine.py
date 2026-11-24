@@ -132,6 +132,27 @@ def fetch_naver_chart_with_indicators(
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["Close"])
 
+    price_dec = 2 if is_foreign else 0
+    return compute_tv_indicators_from_df(
+        df=df,
+        code=cleaned_code,
+        tf_key=tf_key,
+        is_minute=is_minute,
+        is_foreign=is_foreign,
+        price_dec=price_dec,
+    )
+
+
+def compute_tv_indicators_from_df(
+    df: pd.DataFrame,
+    code: str,
+    tf_key: str = "day",
+    is_minute: bool = False,
+    is_foreign: bool = False,
+    price_dec: int = 0,
+) -> dict:
+    """OHLCV DataFrame으로부터 32종+ 기술적 지표와 TradingView용 JSON 시계열을 계산합니다."""
+    df = df.copy()
     close = df["Close"].astype(float)
     high = df["High"].astype(float).fillna(close) if "High" in df.columns else close
     low = df["Low"].astype(float).fillna(close) if "Low" in df.columns else close
@@ -295,7 +316,6 @@ def fetch_naver_chart_with_indicators(
         pass
 
     view = df.tail(180).copy()
-    price_dec = 2 if is_foreign else 0
 
     def _tv_time(ts):
         if is_minute:
@@ -331,7 +351,7 @@ def fetch_naver_chart_with_indicators(
         return out
 
     return {
-        "code": cleaned_code,
+        "code": code,
         "timeframe": tf_key,
         "is_minute": is_minute,
         "is_foreign": is_foreign,

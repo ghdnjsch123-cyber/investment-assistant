@@ -11,6 +11,7 @@ from quant_engine import (
     fetch_naver_chart_with_indicators,
 )
 from dart_client import fetch_recent_disclosures, search_stock_catalog, resolve_stock_code
+from coin_client import search_coins, resolve_coin_market, fetch_coin_chart_with_indicators, collect_coin_data
 
 # .env 환경변수 로드
 load_dotenv()
@@ -416,6 +417,113 @@ def technical_chat():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error("[ERROR] /api/technical/chat 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/coin/search", methods=["GET"])
+def coin_search():
+    """[탭4] 업비트 원화 마켓 코인 자동완성 후보를 반환합니다."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"results": []}), 200
+    try:
+        return jsonify({"results": search_coins(q, limit=10)}), 200
+    except Exception as e:
+        logger.error("[ERROR] /api/coin/search 실패: %s", e)
+        return jsonify({"results": []}), 200
+
+
+@app.route("/api/coin/chart", methods=["POST"])
+def coin_timeframe_chart():
+    """[탭4] 업비트 분봉/일/주/월봉 캔들 및 32종+ 기술지표를 반환합니다."""
+    payload = request.get_json(silent=True) or {}
+    raw_query = (payload.get("market") or "").strip()
+    timeframe = (payload.get("timeframe") or "day").strip()
+
+    try:
+        info = resolve_coin_market(raw_query)
+        chart_data = fetch_coin_chart_with_indicators(info["market"], timeframe=timeframe)
+        return jsonify(chart_data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error("[ERROR] /api/coin/chart 실패: %s", e, exc_info=True)
+        return jsonify({"error": "코인 차트 데이터를 불러오는 중 오류가 발생했습니다."}), 500
+
+
+@app.route("/api/coin/analysis", methods=["POST"])
+def coin_analysis():
+    """[탭4] 코인 종합 데이터 수집 후 Dify 일반 챗봇 ①로 심층 리포트 및 후속 질문을 처리합니다."""
+    payload = request.get_json(silent=True) or {}
+    raw_query = (payload.get("market") or "").strip()
+    question = (payload.get("question") or "").strip()
+    conversation_id = (payload.get("conversation_id") or "").strip()
+
+    logger.info("[REQUEST] POST /api/coin/analysis market=%s (followup=%s)", raw_query, bool(conversation_id))
+
+    try:
+        if conversation_id and question:
+            dify_res = ask_dify_chatbot(
+                bot_type="analysis",
+                query=question,
+                inputs={},
+                conversation_id=conversation_id,
+            )
+            return jsonify({
+                "answer": dify_res["answer"],
+                "conversation_id": dify_res["conversation_id"],
+                "coin_data": None,
+            }), 200
+
+        coin_data = collect_coin_data(raw_query)
+        tv_chart = coin_data.pop("tv_chart", None)
+        coin_json = json.dumps(coin_data, ensure_ascii=False)
+        coin_name = coin_data.get("name", "")
+        market = coin_data.get("market", "")
+
+        if not question:
+            question = (
+                "당신은 암호화폐 초보자에게도 친절하게 설명하는 가상자산 수석 애널리스트입니다. "
+                f"아래 실시간 수집 데이터(JSON)만을 근거로 {coin_name}({market}) 코인에 대한 종합 분석 리포트를 작성해 주세요.\n"
+                "어려운 용어(김치프리미엄, 공포탐욕지수, RSI, 볼린저밴드 등)가 나올 때마다 반드시 괄호 안에 초보자용 쉬운 비유를 붙여주세요.\n\n"
+                "다음 구조로 깔끔하게 작성해 주세요:\n"
+                "### 1. 📊 핵심 답변 요약\n"
+                "- 현재 가격 흐름, 52주 내 위치(position_52w%), 시장 심리를 3줄 이내로 명쾌하게 요약\n"
+                "### 2. 😨 시장 심리 및 수급 (공포·탐욕 지수 & 김치프리미엄)\n"
+                "- 공포·탐욕 지수(fear_greed), 김치프리미엄(kimchi_premium%), 24시간 거래대금(trade_value_24h), 유의종목 여부(warning) 풀이\n"
+                "### 3. 📈 가격 추이 및 기술지표 분석\n"
+                "- technical 데이터(20일/60일 이동평균선, RSI14, MACD, 볼린저밴드 위치%)를 바탕으로 단기 과매도/과열 여부를 쉽게 설명\n"
+                "### 4. 📰 최신 코인 뉴스 모멘텀 및 이슈\n"
+                "- 제공된 최신 뉴스 5건 기반 호재·악재 정리\n"
+                "### 5. ⚖️ 매수 vs 매도 우위 판단 (직접 결론)\n"
+                "- 수집된 데이터를 종합해 현재 **[매수 우위 / 중립 / 매도(관망) 우위]** 중 어느 쪽이 유리한지 직접 결론을 내리고, 매수 우위 근거 vs 매도(리스크) 근거를 숫자로 대비해 제시해 주세요."
+            )
+
+        enriched_query = (
+            f"[코인 심층 분석 요청: {coin_name} ({market})]\n"
+            f"반드시 아래 실시간 수집 데이터(JSON)에 포함된 팩트와 숫자만을 근거로 답변하세요.\n\n"
+            f"--- 수집 데이터(JSON) ---\n{coin_json}\n\n"
+            f"--- 요청 내용 ---\n{question}"
+        )
+
+        dify_res = ask_dify_chatbot(
+            bot_type="analysis",
+            query=enriched_query,
+            inputs={"stock_data": coin_json, "stock_code": market, "stock_name": coin_name},
+            conversation_id="",
+        )
+
+        coin_data["tv_chart"] = tv_chart
+        logger.info("[RESPONSE] /api/coin/analysis 완료 (market=%s)", market)
+        return jsonify({
+            "answer": dify_res["answer"],
+            "conversation_id": dify_res["conversation_id"],
+            "coin_data": coin_data,
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error("[ERROR] /api/coin/analysis 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

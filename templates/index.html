@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
   <title>나의 투자도우미 (My Investment Assistant)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=14" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=15" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -23,11 +23,12 @@
       </div>
     </header>
 
-    <!-- 3탭 네비게이션 -->
+    <!-- 4탭 네비게이션 -->
     <nav class="tab-nav" role="tablist">
       <button type="button" class="tab-btn active" data-tab="tab1">1. 종목 심층분석 채팅</button>
       <button type="button" class="tab-btn" data-tab="tab2">2. 리밸런싱 도우미</button>
       <button type="button" class="tab-btn" data-tab="tab3">3. 기술지표 차트 + 채팅</button>
+      <button type="button" class="tab-btn" data-tab="tab4">4. 코인 종합 분석</button>
     </nav>
 
     <!-- ================= 탭 1: 종목 심층분석 & 후속 질문 ================= -->
@@ -331,8 +332,131 @@
         </div>
       </div>
     </section>
+
+    <!-- ================= 탭 4: 코인 종합 분석 ================= -->
+    <section id="tab4" class="tab-panel">
+      <!-- 4-1. 코인 선택 카드 -->
+      <div class="card">
+        <div class="panel-header">
+          <div>
+            <h2 class="section-title">코인 종합 분석 (업비트 실시간 · 공포탐욕 · 김치프리미엄)</h2>
+            <p class="panel-desc">업비트 원화 마켓 코인을 검색하거나 선택하면 실시간 차트(32종+ 지표), 공포·탐욕 지수, 김치프리미엄, 최신 뉴스, AI 분석을 제공합니다.</p>
+          </div>
+          <button type="button" id="t4ResetBtn" class="secondary-btn">초기화</button>
+        </div>
+
+        <form id="t4SelectForm" class="input-row">
+          <div class="autocomplete-wrap">
+            <input type="text" id="t4MarketInput" placeholder="코인명 또는 티커 입력 (예: 비트코인, BTC, 리플)" value="KRW-BTC" autocomplete="off" required />
+            <ul id="t4AutocompleteList" class="autocomplete-list hidden"></ul>
+          </div>
+          <button type="submit" id="t4AnalyzeBtn" class="primary-small-btn">코인 분석 시작</button>
+          <div class="quick-examples inline">
+            <button type="button" class="chip-btn t4-chip coin-chip" data-market="KRW-BTC">BTC 비트코인</button>
+            <button type="button" class="chip-btn t4-chip coin-chip" data-market="KRW-ETH">ETH 이더리움</button>
+            <button type="button" class="chip-btn t4-chip coin-chip" data-market="KRW-XRP">XRP 리플</button>
+            <button type="button" class="chip-btn t4-chip coin-chip" data-market="KRW-SOL">SOL 솔라나</button>
+          </div>
+        </form>
+
+        <div id="t4LoadingBox" class="status-box loading hidden">
+          <span class="spinner"></span>
+          <span>업비트 시세·캔들, 공포·탐욕 지수, 김치프리미엄, 최신 코인 뉴스 수집 및 AI 분석 중...</span>
+        </div>
+        <div id="t4ErrorBox" class="status-box error hidden"></div>
+      </div>
+
+      <!-- 4-2. 코인 종합 분석 리포트 패널 -->
+      <div id="t4ReportSection" class="card hidden">
+        <div class="section-header-row">
+          <h3 class="section-title">🪙 코인 종합 분석 리포트</h3>
+          <span id="t4MarketBar" class="market-bar"></span>
+        </div>
+
+        <!-- 최상단 트레이딩뷰 실시간 코인 차트 -->
+        <div id="t4TradingViewCard" class="tv-chart-card hidden">
+          <div class="tv-chart-header">
+            <span id="t4TvTitle" class="tv-chart-title">📈 실시간 코인 캔들 · 거래량 차트 (업비트)</span>
+            <span id="t4TvOhlcvLegend" class="tv-ohlcv-legend">차트 위에 마우스를 올리면 시가·고가·저가·종가·거래량이 표시됩니다</span>
+          </div>
+
+          <div class="tv-toolbar">
+            <div class="tv-tf-group" id="t4TfGroup">
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="minute1">1분</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="minute5">5분</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="minute15">15분</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="minute30">30분</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="minute60">60분</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn active" data-tf="day">일봉</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="week">주봉</button>
+              <button type="button" class="tv-tf-btn t4-tf-btn" data-tf="month">월봉</button>
+            </div>
+            <div class="tv-ind-search-wrap t4-ind-search-wrap">
+              <input
+                type="text"
+                id="t4IndSearchInput"
+                placeholder="+ 지표 검색/추가 (30종+: ADX, 일목, PSAR, MA 100...)"
+                autocomplete="off"
+              />
+              <ul id="t4IndSearchList" class="autocomplete-list tv-ind-dropdown hidden"></ul>
+            </div>
+          </div>
+
+          <div id="t4ActiveIndTags" class="tv-active-tags"></div>
+          <div id="t4TvNotice" class="tv-notice hidden"></div>
+          <div id="t4TvChartContainer" class="tv-chart-container"></div>
+          <div id="t4TvSubchartsArea"></div>
+        </div>
+
+        <div id="t4ContextBar" class="context-bar hidden"></div>
+
+        <!-- 초보자용 코인 요약 카드 -->
+        <div id="t4SummaryCard" class="t1-summary-card hidden">
+          <div class="t1-summary-top">
+            <div class="t1-title-group">
+              <span id="t4AssetBadge" class="asset-badge coin">코인</span>
+              <strong id="t4SummaryName">-</strong>
+              <span id="t4SummaryPrice" class="t1-summary-price">-</span>
+              <span id="t4SummaryChange" class="t1-summary-change">-</span>
+            </div>
+            <div class="t1-range-group">
+              <span id="t4RangeLabel" class="t1-range-label">52주 위치: -</span>
+              <div class="range-bar-bg">
+                <div id="t4RangeFill" class="range-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+          <div id="t4BeginnerCards" class="t1-beginner-grid"></div>
+        </div>
+
+        <div id="t4ReportBody" class="report-body"></div>
+      </div>
+
+      <!-- 4-3. 코인 후속 질문 전용 챗봇 -->
+      <div id="t4ChatSection" class="card">
+        <h3 class="section-title">💬 코인 애널리스트 챗봇과 후속 대화하기</h3>
+        <div id="t4ChatMessages" class="chat-box compact">
+          <div class="chat-msg bot">
+            <div class="chat-bubble">위에서 코인을 선택해 실시간 차트와 종합 리포트를 확인하신 뒤, 궁금한 점을 아래에서 질문해 주세요!</div>
+          </div>
+        </div>
+
+        <div class="quick-questions">
+          <span class="qq-label">초보자 추천 질문:</span>
+          <button type="button" class="qq-btn t4-qq-btn" data-q="이 코인의 급락 위험이나 유의종목 리스크는 어떤가요? 초보자가 조심해야 할 점을 알려주세요.">급락/유의 위험은?</button>
+          <button type="button" class="qq-btn t4-qq-btn" data-q="현재 공포·탐욕 지수와 기술지표(RSI, 볼린저밴드)를 볼 때 지금 진입 타이밍은 어떤가요?">지금 들어가도 될까요?</button>
+          <button type="button" class="qq-btn t4-qq-btn" data-q="김치프리미엄과 공포·탐욕 지수가 현재 이 코인에 어떤 의미인지 쉽게 설명해 주세요.">김프·공포지수 해석</button>
+          <button type="button" class="qq-btn t4-qq-btn" data-q="최근 코인 뉴스 5건 중 가격에 가장 큰 영향을 줄 핵심 호재와 악재 1가지씩 꼽아주세요.">뉴스 핵심 호재/악재</button>
+        </div>
+
+        <form id="t4ChatForm" class="chat-input-form">
+          <input type="text" id="t4QuestionInput" placeholder="코인 분석 리포트를 보고 궁금한 점을 후속 질문해 보세요..." required />
+          <button type="submit" id="t4SendBtn">후속 질문</button>
+        </form>
+      </div>
+    </section>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=14"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=15"></script>
 </body>
 </html>

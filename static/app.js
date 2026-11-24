@@ -1783,4 +1783,584 @@ document.addEventListener("DOMContentLoaded", () => {
       t3QuestionInput.focus();
     }
   });
+
+  // -------------------------------------------------------------------------
+  // 탭 4: 코인 종합 분석 (업비트 + 공포·탐욕 + 김치프리미엄 + 32종+ 차트 + Dify ①)
+  // -------------------------------------------------------------------------
+  const t4SelectForm = document.getElementById("t4SelectForm");
+  const t4MarketInput = document.getElementById("t4MarketInput");
+  const t4AutocompleteList = document.getElementById("t4AutocompleteList");
+  const t4AnalyzeBtn = document.getElementById("t4AnalyzeBtn");
+  const t4LoadingBox = document.getElementById("t4LoadingBox");
+  const t4ErrorBox = document.getElementById("t4ErrorBox");
+  const t4ReportSection = document.getElementById("t4ReportSection");
+  const t4MarketBar = document.getElementById("t4MarketBar");
+  const t4TradingViewCard = document.getElementById("t4TradingViewCard");
+  const t4TvTitle = document.getElementById("t4TvTitle");
+  const t4TvOhlcvLegend = document.getElementById("t4TvOhlcvLegend");
+  const t4TvChartContainer = document.getElementById("t4TvChartContainer");
+  const t4TvNotice = document.getElementById("t4TvNotice");
+  const t4TvSubchartsArea = document.getElementById("t4TvSubchartsArea");
+  const t4TfBtns = document.querySelectorAll(".t4-tf-btn");
+  const t4IndSearchInput = document.getElementById("t4IndSearchInput");
+  const t4IndSearchList = document.getElementById("t4IndSearchList");
+  const t4ActiveIndTags = document.getElementById("t4ActiveIndTags");
+  const t4ContextBar = document.getElementById("t4ContextBar");
+  const t4SummaryCard = document.getElementById("t4SummaryCard");
+  const t4ReportBody = document.getElementById("t4ReportBody");
+  const t4ChatMessages = document.getElementById("t4ChatMessages");
+  const t4ChatForm = document.getElementById("t4ChatForm");
+  const t4QuestionInput = document.getElementById("t4QuestionInput");
+  const t4SendBtn = document.getElementById("t4SendBtn");
+  const t4ResetBtn = document.getElementById("t4ResetBtn");
+  const t4QqBtns = document.querySelectorAll(".t4-qq-btn");
+
+  let t4ConversationId = "";
+  let t4LastMarket = "";
+  let t4CurrentMeta = null;
+  let t4CurrentChartData = null;
+  let t4TvChartInst = null;
+  let t4TvSubChartInsts = [];
+  let t4AcTimer = null;
+  const activeT4Indicators = new Set(["ma20", "ma60"]);
+
+  function resetTab4Chat(
+    notice = "위에서 코인을 선택해 실시간 차트와 종합 리포트를 확인하신 뒤, 궁금한 점을 아래에서 질문해 주세요!"
+  ) {
+    t4ConversationId = "";
+    t4LastMarket = "";
+    t4ChatMessages.innerHTML = "";
+    appendChatBubble(t4ChatMessages, "bot", notice);
+    t4ReportSection.classList.add("hidden");
+    t4TradingViewCard.classList.add("hidden");
+    t4ReportBody.innerHTML = "";
+    t4ContextBar.classList.add("hidden");
+    t4SummaryCard.classList.add("hidden");
+    t4ErrorBox.classList.add("hidden");
+    t4AutocompleteList.classList.add("hidden");
+  }
+
+  function setTab4Busy(isBusy) {
+    t4AnalyzeBtn.disabled = isBusy;
+    t4SendBtn.disabled = isBusy;
+    t4QuestionInput.disabled = isBusy;
+    t4MarketInput.disabled = isBusy;
+    t4QqBtns.forEach((b) => { b.disabled = isBusy; });
+  }
+
+  function renderT4ActiveTags() {
+    t4ActiveIndTags.innerHTML = "";
+    activeT4Indicators.forEach((id) => {
+      const meta = getIndicatorMeta(id);
+      if (!meta) return;
+      const tag = document.createElement("span");
+      tag.className = `tv-ind-tag ${meta.mode === "sub" ? "sub" : ""}`;
+      tag.textContent = meta.name;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tv-tag-remove";
+      btn.textContent = "×";
+      btn.addEventListener("click", () => {
+        activeT4Indicators.delete(id);
+        renderT4ActiveTags();
+        if (t4CurrentChartData) drawT4TvChart(t4CurrentChartData);
+      });
+      tag.appendChild(btn);
+      t4ActiveIndTags.appendChild(tag);
+    });
+  }
+
+  function drawT4TvChart(chartData) {
+    if (!window.LightweightCharts || !chartData || !chartData.ohlcv || chartData.ohlcv.length === 0) return;
+
+    const meta = t4CurrentMeta || { market: chartData.code, name: chartData.code };
+    const ohlcv = chartData.ohlcv;
+    const isSmall = ohlcv[ohlcv.length - 1].close < 1000;
+
+    t4TvTitle.textContent = `📈 ${meta.name} (${meta.market}) 실시간 캔들 · 거래량 차트 (${chartData.timeframe})`;
+
+    if (t4TvChartInst) { t4TvChartInst.remove(); t4TvChartInst = null; }
+    t4TvSubChartInsts.forEach((inst) => inst.remove());
+    t4TvSubChartInsts = [];
+    t4TvChartContainer.innerHTML = "";
+    t4TvSubchartsArea.innerHTML = "";
+
+    const chartWidth = t4TvChartContainer.clientWidth || 800;
+    const chart = LightweightCharts.createChart(t4TvChartContainer, {
+      width: chartWidth,
+      height: 360,
+      layout: { background: { color: "#ffffff" }, textColor: "#334155" },
+      grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#cbd5e1" },
+      timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute), secondsVisible: false },
+    });
+    t4TvChartInst = chart;
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: "#ef4444",
+      downColor: "#3b82f6",
+      borderUpColor: "#ef4444",
+      borderDownColor: "#3b82f6",
+      wickUpColor: "#ef4444",
+      wickDownColor: "#3b82f6",
+      priceFormat: isSmall
+        ? { type: "price", precision: 2, minMove: 0.01 }
+        : { type: "price", precision: 0, minMove: 1 },
+    });
+    candleSeries.setData(ohlcv.map((d) => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close })));
+
+    const overlayLines = [
+      { id: "ma5", key: "ma5", color: "#ec4899", title: "MA5" },
+      { id: "ma20", key: "ma20", color: "#f59e0b", title: "MA20" },
+      { id: "ma60", key: "ma60", color: "#10b981", title: "MA60" },
+      { id: "ma120", key: "ma120", color: "#6366f1", title: "MA120" },
+      { id: "ema5", key: "ema5", color: "#f43f5e", title: "EMA5" },
+      { id: "ema20", key: "ema20", color: "#06b6d4", title: "EMA20" },
+      { id: "ema60", key: "ema60", color: "#14b8a6", title: "EMA60" },
+      { id: "ema120", key: "ema120", color: "#8b5cf6", title: "EMA120" },
+      { id: "vwap20", key: "vwap20", color: "#a855f7", title: "VWAP20" },
+    ];
+    overlayLines.forEach((cfg) => {
+      if (activeT4Indicators.has(cfg.id) && chartData[cfg.key]?.length) {
+        chart.addLineSeries({ color: cfg.color, lineWidth: 1.5, title: cfg.title }).setData(chartData[cfg.key]);
+      }
+    });
+
+    const customColors = ["#e11d48", "#0284c7", "#059669", "#d97706", "#7c3aed"];
+    let cIdx = 0;
+    activeT4Indicators.forEach((id) => {
+      const m = getIndicatorMeta(id);
+      if (m && m.customKind) {
+        const sData = computeCustomMaSeries(ohlcv, m.customKind, m.period, isSmall ? 2 : 0);
+        if (sData.length) {
+          chart.addLineSeries({ color: customColors[cIdx++ % customColors.length], lineWidth: 1.6, title: `${m.customKind}${m.period}` }).setData(sData);
+        }
+      }
+    });
+
+    if (activeT4Indicators.has("bb") && chartData.bb_upper?.length && chartData.bb_lower?.length) {
+      chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB상단" }).setData(chartData.bb_upper);
+      chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "BB하단" }).setData(chartData.bb_lower);
+    }
+    if (activeT4Indicators.has("keltner") && chartData.kc_high?.length && chartData.kc_low?.length) {
+      chart.addLineSeries({ color: "#0284c7", lineWidth: 1, lineStyle: 2, title: "KC상단" }).setData(chartData.kc_high);
+      chart.addLineSeries({ color: "#0284c7", lineWidth: 1, lineStyle: 2, title: "KC하단" }).setData(chartData.kc_low);
+    }
+    if (activeT4Indicators.has("donchian") && chartData.dc_high?.length && chartData.dc_low?.length) {
+      chart.addLineSeries({ color: "#16a34a", lineWidth: 1, lineStyle: 2, title: "DC상단" }).setData(chartData.dc_high);
+      chart.addLineSeries({ color: "#16a34a", lineWidth: 1, lineStyle: 2, title: "DC하단" }).setData(chartData.dc_low);
+    }
+    if (activeT4Indicators.has("ichimoku") && chartData.ichi_conv?.length && chartData.ichi_base?.length) {
+      chart.addLineSeries({ color: "#ef4444", lineWidth: 1.4, title: "전환선" }).setData(chartData.ichi_conv);
+      chart.addLineSeries({ color: "#2563eb", lineWidth: 1.4, title: "기준선" }).setData(chartData.ichi_base);
+    }
+    if (activeT4Indicators.has("psar") && chartData.psar?.length) {
+      chart.addLineSeries({ color: "#f97316", lineWidth: 0, pointMarkersVisible: true, pointMarkersRadius: 2.5, title: "PSAR" }).setData(chartData.psar);
+    }
+
+    const volumeSeries = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volumeSeries.setData(
+      ohlcv.map((d) => ({
+        time: d.time,
+        value: d.volume,
+        color: d.close >= d.open ? "rgba(239, 68, 68, 0.35)" : "rgba(59, 130, 246, 0.35)",
+      }))
+    );
+
+    const labelMap = new Map(ohlcv.map((d) => [d.time, d.label || d.time]));
+    const last = ohlcv[ohlcv.length - 1];
+    const updateLegend = (bar, vol) => {
+      if (!bar) return;
+      const dateLabel = labelMap.get(bar.time) || bar.time;
+      t4TvOhlcvLegend.textContent =
+        `${dateLabel} | 시 ${formatNumber(bar.open, "원")} · 고 ${formatNumber(bar.high, "원")} · ` +
+        `저 ${formatNumber(bar.low, "원")} · 종 ${formatNumber(bar.close, "원")} | 거래량 ${formatNumber(vol)}`;
+    };
+    updateLegend(last, last.volume);
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.time) { updateLegend(last, last.volume); return; }
+      const cData = param.seriesData.get(candleSeries);
+      const vData = param.seriesData.get(volumeSeries);
+      if (cData) updateLegend({ ...cData, time: param.time }, vData ? vData.value : 0);
+    });
+    chart.timeScale().fitContent();
+
+    const createSub = (label, buildFn) => {
+      const wrap = document.createElement("div");
+      wrap.className = "tv-subchart-wrap";
+      const lbl = document.createElement("div");
+      lbl.className = "tv-subchart-label";
+      lbl.textContent = label;
+      const box = document.createElement("div");
+      box.className = "tv-subchart-container";
+      wrap.append(lbl, box);
+      t4TvSubchartsArea.appendChild(wrap);
+      const sub = LightweightCharts.createChart(box, {
+        width: chartWidth,
+        height: 130,
+        layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+        grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+        timeScale: { borderColor: "#cbd5e1", timeVisible: Boolean(chartData.is_minute) },
+      });
+      buildFn(sub);
+      sub.timeScale().fitContent();
+      t4TvSubChartInsts.push(sub);
+    };
+
+    const subDefs = [
+      ["rsi14", "RSI (14일)", (sub) => sub.addLineSeries({ color: "#8b5cf6", lineWidth: 2 }).setData(chartData.rsi14)],
+      ["macd", "MACD (12, 26, 9)", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8 }).setData(chartData.macd);
+        if (chartData.macd_signal?.length) sub.addLineSeries({ color: "#ef4444", lineWidth: 1.5 }).setData(chartData.macd_signal);
+        if (chartData.macd_hist?.length) {
+          sub.addHistogramSeries().setData(chartData.macd_hist.map((d) => ({ time: d.time, value: d.value, color: d.value >= 0 ? "rgba(239,68,68,0.45)" : "rgba(59,130,246,0.45)" })));
+        }
+      }],
+      ["stoch", "스토캐스틱 (%K / %D)", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8 }).setData(chartData.stoch_k);
+        if (chartData.stoch_d?.length) sub.addLineSeries({ color: "#f59e0b", lineWidth: 1.5 }).setData(chartData.stoch_d);
+      }],
+      ["adx", "ADX (14일 추세강도 · DI+/DI-)", (sub) => {
+        sub.addLineSeries({ color: "#0f172a", lineWidth: 2 }).setData(chartData.adx);
+        if (chartData.adx_pos?.length) sub.addLineSeries({ color: "#16a34a", lineWidth: 1.3 }).setData(chartData.adx_pos);
+        if (chartData.adx_neg?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.3 }).setData(chartData.adx_neg);
+      }],
+      ["aroon", "Aroon (25일)", (sub) => {
+        sub.addLineSeries({ color: "#16a34a", lineWidth: 1.6 }).setData(chartData.aroon_up);
+        if (chartData.aroon_down?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.6 }).setData(chartData.aroon_down);
+      }],
+      ["ao", "Awesome Oscillator", (sub) => sub.addHistogramSeries().setData(chartData.ao.map((d) => ({ time: d.time, value: d.value, color: d.value >= 0 ? "rgba(22,163,74,0.7)" : "rgba(220,38,38,0.7)" })))],
+      ["cci20", "CCI (20일)", (sub) => sub.addLineSeries({ color: "#0ea5e9", lineWidth: 1.8 }).setData(chartData.cci20)],
+      ["atr14", "ATR (14일)", (sub) => sub.addLineSeries({ color: "#f97316", lineWidth: 1.8 }).setData(chartData.atr14)],
+      ["obv", "OBV (거래량 누적)", (sub) => sub.addLineSeries({ color: "#14b8a6", lineWidth: 1.8 }).setData(chartData.obv)],
+      ["willr14", "Williams %R (14일)", (sub) => sub.addLineSeries({ color: "#e11d48", lineWidth: 1.8 }).setData(chartData.willr14)],
+      ["mfi14", "MFI (14일)", (sub) => sub.addLineSeries({ color: "#10b981", lineWidth: 1.8 }).setData(chartData.mfi14)],
+      ["roc", "ROC (12일 %)", (sub) => sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8 }).setData(chartData.roc)],
+      ["tsi", "TSI", (sub) => sub.addLineSeries({ color: "#7c3aed", lineWidth: 1.8 }).setData(chartData.tsi)],
+      ["uo", "Ultimate Oscillator", (sub) => sub.addLineSeries({ color: "#0284c7", lineWidth: 1.8 }).setData(chartData.uo)],
+      ["cmf", "CMF (20일)", (sub) => sub.addLineSeries({ color: "#059669", lineWidth: 1.8 }).setData(chartData.cmf)],
+      ["vortex", "Vortex (VI+/VI-)", (sub) => {
+        sub.addLineSeries({ color: "#16a34a", lineWidth: 1.6 }).setData(chartData.vi_pos);
+        if (chartData.vi_neg?.length) sub.addLineSeries({ color: "#dc2626", lineWidth: 1.6 }).setData(chartData.vi_neg);
+      }],
+      ["kst", "KST Oscillator", (sub) => {
+        sub.addLineSeries({ color: "#2563eb", lineWidth: 1.8 }).setData(chartData.kst);
+        if (chartData.kst_sig?.length) sub.addLineSeries({ color: "#ef4444", lineWidth: 1.4 }).setData(chartData.kst_sig);
+      }],
+      ["fi", "Force Index", (sub) => sub.addLineSeries({ color: "#d97706", lineWidth: 1.8 }).setData(chartData.fi)],
+    ];
+
+    subDefs.forEach(([id, label, fn]) => {
+      const keyMap = { adx: "adx", aroon: "aroon_up", vortex: "vi_pos", stoch: "stoch_k" };
+      const checkKey = keyMap[id] || id;
+      if (activeT4Indicators.has(id) && chartData[checkKey]?.length) {
+        createSub(label, fn);
+      }
+    });
+  }
+
+  function renderTab4Summary(coinData) {
+    const snap = coinData.snapshot || {};
+    const fng = coinData.fear_greed || {};
+    const tech = coinData.technical || {};
+
+    document.getElementById("t4AssetBadge").textContent = coinData.warning ? "유의종목" : "업비트 KRW";
+    document.getElementById("t4SummaryName").textContent = `${coinData.name} (${coinData.market})`;
+    document.getElementById("t4SummaryPrice").textContent = formatNumber(snap.current_price, "원");
+
+    const changeEl = document.getElementById("t4SummaryChange");
+    const rate = snap.change_rate;
+    if (rate !== null && rate !== undefined) {
+      const sign = rate > 0 ? "▲" : rate < 0 ? "▼" : "";
+      const plus = rate > 0 ? "+" : "";
+      changeEl.textContent = `${sign} ${plus}${rate}%`;
+      changeEl.className = `t1-summary-change ${rate > 0 ? "up" : rate < 0 ? "down" : "flat"}`;
+    }
+
+    const pos = snap.position_52w;
+    if (pos !== null && pos !== undefined) {
+      document.getElementById("t4RangeLabel").textContent =
+        `1년(52주) 중 현재 위치: ${pos}% (최저 ${formatNumber(snap.low52)} ~ 최고 ${formatNumber(snap.high52)})`;
+      document.getElementById("t4RangeFill").style.width = `${pos}%`;
+    }
+
+    const fgVal = fng.value;
+    const fgHint =
+      fgVal === undefined
+        ? "시장 심리 정보 없음"
+        : fgVal <= 25
+          ? "극단적 공포 (공포에 매수하는 역발상 구간)"
+          : fgVal <= 45
+            ? "시장 심리가 위축된 공포 구간"
+            : fgVal <= 55
+              ? "중립적인 투자 심리"
+              : "탐욕 과열 구간 (추격 매수 주의)";
+
+    const kimp = coinData.kimchi_premium;
+    const kimpHint =
+      kimp === null || kimp === undefined
+        ? "해외 시세 비교 불가"
+        : kimp > 3
+          ? "해외보다 비싸게 거래 중 (과열 주의)"
+          : kimp >= -1
+            ? "해외 시세와 거의 비슷한 정상 범위"
+            : "해외보다 싸게 거래 중 (역프리미엄)";
+
+    const cards = [
+      {
+        title: "오늘 시장 심리 (공포·탐욕)",
+        val: fgVal !== undefined ? `${fgVal}점 (${fng.classification_kr})` : "-",
+        hint: fgHint,
+      },
+      {
+        title: "24시간 거래대금",
+        val: formatMarketCap(snap.trade_value_24h),
+        hint: `24시간 거래량 ${formatNumber(snap.volume_24h)} ${coinData.symbol}`,
+      },
+      {
+        title: "김치프리미엄 (바이낸스 대비)",
+        val: kimp !== null && kimp !== undefined ? `${kimp > 0 ? "+" : ""}${kimp}%` : "-",
+        hint: kimpHint,
+      },
+      {
+        title: "기술적 위치 (RSI / 볼린저)",
+        val: `RSI ${tech.rsi14 ?? "-"} / 위치 ${tech.bb_position_pct ?? "-"}%`,
+        hint: coinData.warning ? "⚠️ 거래소 투자유의종목 지정 상태" : "정상 거래 지원 코인",
+      },
+    ];
+
+    const gridEl = document.getElementById("t4BeginnerCards");
+    gridEl.innerHTML = "";
+    cards.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "beginner-item";
+      div.innerHTML = `<div class="beginner-title">${c.title}</div><div class="beginner-val">${c.val}</div><div class="beginner-hint">${c.hint}</div>`;
+      gridEl.appendChild(div);
+    });
+
+    const env = coinData.market_env || {};
+    if (env.usdkrw) {
+      t4MarketBar.textContent = `원/달러 환율 ${formatNumber(env.usdkrw.value)}원 · 업비트 실시간`;
+    }
+
+    t4SummaryCard.classList.remove("hidden");
+
+    if (coinData.tv_chart) {
+      t4CurrentMeta = { market: coinData.market, name: coinData.name };
+      t4CurrentChartData = coinData.tv_chart;
+      t4TfBtns.forEach((b) => b.classList.toggle("active", b.dataset.tf === "day"));
+      t4TvNotice.classList.add("hidden");
+      t4TradingViewCard.classList.remove("hidden");
+      renderT4ActiveTags();
+      drawT4TvChart(t4CurrentChartData);
+    }
+  }
+
+  async function sendTab4Request(rawMarket, question = "", isInitial = false) {
+    const query = (rawMarket || "").trim();
+    if (!query) {
+      t4ErrorBox.textContent = "코인명 또는 티커를 입력해 주세요. (예: 비트코인, BTC)";
+      t4ErrorBox.classList.remove("hidden");
+      return;
+    }
+
+    t4AutocompleteList.classList.add("hidden");
+    t4ErrorBox.classList.add("hidden");
+
+    if (isInitial || (t4LastMarket && t4LastMarket !== query)) {
+      t4ConversationId = "";
+      if (isInitial) {
+        t4ChatMessages.innerHTML = "";
+        t4ReportSection.classList.add("hidden");
+        t4TradingViewCard.classList.add("hidden");
+        t4ReportBody.innerHTML = "";
+        t4ContextBar.classList.add("hidden");
+        t4SummaryCard.classList.add("hidden");
+      }
+    }
+
+    let thinkingBubble = null;
+    if (isInitial) {
+      t4LoadingBox.classList.remove("hidden");
+    } else {
+      appendChatBubble(t4ChatMessages, "user", `[${t4LastMarket || query}] ${question}`);
+      thinkingBubble = appendChatBubble(t4ChatMessages, "bot", "코인 데이터를 바탕으로 후속 질문 답변 작성 중...");
+    }
+
+    setTab4Busy(true);
+    console.log(`[CHAT]       코인 분석 요청 시작 (tab4, market=${query}, initial=${isInitial})`);
+
+    try {
+      const res = await fetch("/api/coin/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ market: query, question, conversation_id: t4ConversationId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "코인 분석 요청에 실패했습니다.");
+
+      t4ConversationId = data.conversation_id || t4ConversationId;
+      const resolvedMkt = data.coin_data?.market || query;
+      t4LastMarket = resolvedMkt;
+      if (data.coin_data?.market) t4MarketInput.value = resolvedMkt;
+
+      if (isInitial) {
+        setBotFormattedContent(t4ReportBody, data.answer || "응답이 비어 있습니다.");
+        t4ReportSection.classList.remove("hidden");
+        appendChatBubble(
+          t4ChatMessages,
+          "bot",
+          `${data.coin_data?.name || resolvedMkt} 코인 종합 분석 리포트가 위 패널에 완성되었습니다! 궁금한 점을 아래에서 질문해 주세요.`
+        );
+      } else if (thinkingBubble) {
+        setBotFormattedContent(thinkingBubble, data.answer || "응답이 비어 있습니다.");
+        t4ChatMessages.scrollTop = t4ChatMessages.scrollHeight;
+      }
+
+      if (data.coin_data) {
+        const s = data.coin_data.snapshot || {};
+        t4ContextBar.textContent =
+          `수집 근거 반영됨: ${data.coin_data.name} (${resolvedMkt}) · 현재가 ${formatNumber(s.current_price, "원")} · ` +
+          `공포·탐욕 ${data.coin_data.fear_greed?.value ?? "-"}점 · 뉴스 ${(data.coin_data.news || []).length}건`;
+        t4ContextBar.classList.remove("hidden");
+        renderTab4Summary(data.coin_data);
+      }
+    } catch (err) {
+      if (thinkingBubble) thinkingBubble.textContent = `오류: ${err.message}`;
+      t4ErrorBox.textContent = err.message;
+      t4ErrorBox.classList.remove("hidden");
+      console.error(`[ERROR]      코인 분석 오류 (${err.message})`);
+    } finally {
+      t4LoadingBox.classList.add("hidden");
+      setTab4Busy(false);
+      t4QuestionInput.focus();
+    }
+  }
+
+  t4ResetBtn.addEventListener("click", () => resetTab4Chat());
+
+  t4MarketInput.addEventListener("input", () => {
+    const q = t4MarketInput.value.trim();
+    if (t4AcTimer) clearTimeout(t4AcTimer);
+    if (!q) { t4AutocompleteList.classList.add("hidden"); return; }
+
+    t4AcTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/coin/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const items = data.results || [];
+        t4AutocompleteList.innerHTML = "";
+        if (items.length === 0) { t4AutocompleteList.classList.add("hidden"); return; }
+        items.forEach((item) => {
+          const li = document.createElement("li");
+          li.className = "autocomplete-item";
+          li.innerHTML = `<span class="ac-name">${item.korean_name} (${item.symbol})</span><span class="ac-meta">${item.market}</span>`;
+          li.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            t4MarketInput.value = item.market;
+            t4AutocompleteList.classList.add("hidden");
+            sendTab4Request(item.market, "", true);
+          });
+          t4AutocompleteList.appendChild(li);
+        });
+        t4AutocompleteList.classList.remove("hidden");
+      } catch {
+        t4AutocompleteList.classList.add("hidden");
+      }
+    }, 150);
+  });
+
+  t4SelectForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendTab4Request(t4MarketInput.value.trim(), "", true);
+  });
+
+  document.querySelectorAll(".t4-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mkt = btn.dataset.market;
+      t4MarketInput.value = mkt;
+      sendTab4Request(mkt, "", true);
+    });
+  });
+
+  t4ChatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = t4QuestionInput.value.trim();
+    if (!q) return;
+    t4QuestionInput.value = "";
+    sendTab4Request(t4MarketInput.value.trim(), q, !t4ConversationId);
+  });
+
+  t4QqBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const q = btn.dataset.q;
+      if (q) sendTab4Request(t4MarketInput.value.trim(), q, !t4ConversationId);
+    });
+  });
+
+  t4TfBtns.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!t4CurrentMeta?.market) return;
+      const tf = btn.dataset.tf;
+      t4TfBtns.forEach((b) => b.classList.toggle("active", b === btn));
+      t4TvNotice.classList.add("hidden");
+      try {
+        const res = await fetch("/api/coin/chart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ market: t4CurrentMeta.market, timeframe: tf }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "코인 차트 조회 실패");
+        t4CurrentChartData = data;
+        drawT4TvChart(data);
+      } catch (err) {
+        t4TvNotice.textContent = `안내: ${err.message}`;
+        t4TvNotice.classList.remove("hidden");
+      }
+    });
+  });
+
+  function showT4IndicatorSuggestions(queryText) {
+    const q = (queryText || "").trim().toLowerCase();
+    const matches = TV_INDICATOR_CATALOG.filter((item) => !q || item.name.toLowerCase().includes(q) || item.keywords.includes(q));
+    const customCandidates = [];
+    const cm = q.match(/^(ma|ema)\s*(\d{1,3})$/);
+    if (cm) {
+      const kind = cm[1].toLowerCase();
+      const period = Number(cm[2]);
+      if (period >= 2 && period <= 200 && !TV_INDICATOR_CATALOG.some((x) => x.id === `${kind}${period}`)) {
+        customCandidates.push({ id: `custom_${kind}_${period}`, name: `${kind.toUpperCase()}${period} (${period}일 맞춤 이평선 추가)`, mode: "overlay" });
+      }
+    }
+    const finalList = [...customCandidates, ...matches];
+    t4IndSearchList.innerHTML = "";
+    if (finalList.length === 0) { t4IndSearchList.classList.add("hidden"); return; }
+    finalList.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "autocomplete-item";
+      li.innerHTML = `<span class="ac-name">${item.name}</span><span class="ac-meta">${activeT4Indicators.has(item.id) ? "추가됨 ✓" : (item.mode === "overlay" ? "메인차트" : "보조차트")}</span>`;
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        activeT4Indicators.add(item.id);
+        t4IndSearchInput.value = "";
+        t4IndSearchList.classList.add("hidden");
+        renderT4ActiveTags();
+        if (t4CurrentChartData) drawT4TvChart(t4CurrentChartData);
+      });
+      t4IndSearchList.appendChild(li);
+    });
+    t4IndSearchList.classList.remove("hidden");
+  }
+
+  t4IndSearchInput.addEventListener("focus", () => showT4IndicatorSuggestions(t4IndSearchInput.value));
+  t4IndSearchInput.addEventListener("input", () => showT4IndicatorSuggestions(t4IndSearchInput.value));
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".t4-ind-search-wrap")) t4IndSearchList.classList.add("hidden");
+    if (!e.target.closest("#t4SelectForm .autocomplete-wrap")) t4AutocompleteList.classList.add("hidden");
+  });
 });
