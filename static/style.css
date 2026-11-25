@@ -2122,3 +2122,96 @@ body {
 
 .t4-ev-impact.High { background: #fee2e2; color: #b91c1c; }
 .t4-ev-impact.Medium { background: #fef3c7; color: #b45309; }
+
+
+/* === API Settings Modal === */
+.api-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.api-modal.hidden {
+  display: none;
+}
+
+.api-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.api-modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.28);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.api-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.api-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.api-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 12px;
+}
+
+.api-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-field label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.api-field input {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.86rem;
+}
+
+.api-key-status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.api-key-status.ok { background: #dcfce7; color: #15803d; }
+.api-key-status.missing { background: #fee2e2; color: #b91c1c; }
+
+.api-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}

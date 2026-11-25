@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from flask import Flask, jsonify, render_template, request
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from collector import collect_stock_data, validate_stock_code
 from dify_client import ask_dify_chatbot
 from quant_engine import (
@@ -84,6 +84,56 @@ def health():
             "dart_api_configured": has_dart_key,
         }
     })
+
+
+_EDITABLE_ENV_KEYS = (
+    "DIFY_BASE_URL",
+    "DIFY_ANALYSIS_API_KEY",
+    "DIFY_TECHNICAL_API_KEY",
+    "SERPER_API_KEY",
+    "DART_API_KEY",
+    "GEMINI_API_KEY",
+)
+
+
+def _mask_secret(val: str) -> str:
+    if not val or val.startswith("your_"):
+        return ""
+    if len(val) <= 8:
+        return "****"
+    return f"{val[:4]}****{val[-4:]}"
+
+
+@app.route("/api/settings/env", methods=["GET", "POST"])
+def api_settings_env():
+    """로컬 .env 파일의 API 키 설정 상태를 조회하거나 새 PC에서 UI를 통해 저장합니다."""
+    if request.method == "GET":
+        items = {}
+        for k in _EDITABLE_ENV_KEYS:
+            val = os.getenv(k, "").strip()
+            configured = bool(val and not val.startswith("your_"))
+            items[k] = {
+                "configured": configured,
+                "masked": val if k == "DIFY_BASE_URL" else _mask_secret(val),
+            }
+        return jsonify({"keys": items}), 200
+
+    payload = request.get_json(silent=True) or {}
+    if not os.path.exists(_ENV_PATH):
+        with open(_ENV_PATH, "w", encoding="utf-8") as f:
+            f.write("# Local environment variables\n")
+
+    updated = []
+    for k in _EDITABLE_ENV_KEYS:
+        if k in payload:
+            raw_val = str(payload.get(k) or "").strip()
+            if raw_val:
+                set_key(_ENV_PATH, k, raw_val)
+                os.environ[k] = raw_val
+                updated.append(k)
+
+    logger.info("[SETTINGS] .env 업데이트 완료: %s", updated)
+    return jsonify({"status": "ok", "updated": updated}), 200
 
 
 @app.route("/fetch", methods=["POST"])

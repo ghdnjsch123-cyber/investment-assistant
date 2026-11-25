@@ -2847,4 +2847,74 @@ document.addEventListener("DOMContentLoaded", () => {
       renderT4Heatmap();
     }
   });
+
+  // -------------------------------------------------------------------------
+  // API 키 설정 모달 (다른 PC에서도 UI로 .env 즉시 설정)
+  // -------------------------------------------------------------------------
+  const apiModal = document.getElementById("apiSettingsModal");
+  const openApiSettingsBtn = document.getElementById("openApiSettingsBtn");
+  const closeApiSettingsBtn = document.getElementById("closeApiSettingsBtn");
+  const apiModalBackdrop = document.getElementById("apiModalBackdrop");
+  const apiSettingsForm = document.getElementById("apiSettingsForm");
+  const apiSettingsMsg = document.getElementById("apiSettingsMsg");
+
+  async function openApiSettingsModal() {
+    if (!apiModal) return;
+    apiSettingsMsg?.classList.add("hidden");
+    apiModal.classList.remove("hidden");
+    try {
+      const res = await fetch("/api/settings/env");
+      const data = await res.json();
+      const keys = data.keys || {};
+      const baseInput = document.getElementById("envDifyBaseUrl");
+      if (baseInput && keys.DIFY_BASE_URL?.masked) {
+        baseInput.value = keys.DIFY_BASE_URL.masked;
+      }
+      Object.entries(keys).forEach(([k, info]) => {
+        const badge = document.getElementById(`status_${k}`);
+        if (!badge) return;
+        badge.textContent = info.configured ? `연결됨 (${info.masked || "OK"})` : "미설정";
+        badge.className = `api-key-status ${info.configured ? "ok" : "missing"}`;
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  function closeApiSettingsModal() {
+    apiModal?.classList.add("hidden");
+  }
+
+  openApiSettingsBtn?.addEventListener("click", openApiSettingsModal);
+  healthStatusEl?.addEventListener("click", openApiSettingsModal);
+  closeApiSettingsBtn?.addEventListener("click", closeApiSettingsModal);
+  apiModalBackdrop?.addEventListener("click", closeApiSettingsModal);
+
+  apiSettingsForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {};
+    new FormData(apiSettingsForm).forEach((val, key) => {
+      const v = String(val || "").trim();
+      if (v) payload[key] = v;
+    });
+    try {
+      const res = await fetch("/api/settings/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "저장 실패");
+      apiSettingsMsg.textContent = `저장 완료! (${(data.updated || []).length}개 항목이 .env에 즉시 반영되었습니다)`;
+      apiSettingsMsg.className = "status-box success";
+      apiSettingsMsg.classList.remove("hidden");
+      await checkServerHealth();
+      await openApiSettingsModal();
+      apiSettingsForm.querySelectorAll('input[type="password"]').forEach((inp) => { inp.value = ""; });
+    } catch (err) {
+      apiSettingsMsg.textContent = `오류: ${err.message}`;
+      apiSettingsMsg.className = "status-box error";
+      apiSettingsMsg.classList.remove("hidden");
+    }
+  });
 });
