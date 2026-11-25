@@ -232,29 +232,65 @@ def fetch_kimchi_premium(symbol: str, binance_usdt_price: float) -> dict[str, An
     return result
 
 
-def fetch_binance_spot(usdt_symbol: str) -> dict[str, Any]:
-    """바이낸스 현물(Spot) 24시간 시세 및 거래대금 조회 (API 키 불필요)."""
-    resp = requests.get(
-        f"{BINANCE_SPOT_BASE}/ticker/24hr",
-        params={"symbol": usdt_symbol},
-        headers=_HEADERS,
-        timeout=8,
-    )
-    resp.raise_for_status()
-    d = resp.json()
+BINANCE_VISION_SPOT_BASE = "https://data-api.binance.vision/api/v3"
+OKX_API_BASE = "https://www.okx.com/api/v5"
 
-    last_price = float(d.get("lastPrice") or 0)
-    price_change = float(d.get("priceChange") or 0)
-    change_pct = float(d.get("priceChangePercent") or 0)
-    high_24h = float(d.get("highPrice") or 0)
-    low_24h = float(d.get("lowPrice") or 0)
-    open_24h = float(d.get("openPrice") or 0)
-    volume_base = float(d.get("volume") or 0)
-    quote_volume_usdt = float(d.get("quoteVolume") or 0)
+
+def fetch_binance_spot(usdt_symbol: str) -> dict[str, Any]:
+    """바이낸스 현물(Spot) 24시간 시세 조회 (미국 서버 451 차단 시 Binance Vision / OKX 자동 폴백)."""
+    d = None
+    exchange_label = "Binance Spot"
+    for base_url in (BINANCE_SPOT_BASE, BINANCE_VISION_SPOT_BASE):
+        try:
+            resp = requests.get(
+                f"{base_url}/ticker/24hr",
+                params={"symbol": usdt_symbol},
+                headers=_HEADERS,
+                timeout=8,
+            )
+            if resp.ok:
+                d = resp.json()
+                break
+        except Exception:
+            continue
+
+    if d is not None:
+        last_price = float(d.get("lastPrice") or 0)
+        price_change = float(d.get("priceChange") or 0)
+        change_pct = float(d.get("priceChangePercent") or 0)
+        high_24h = float(d.get("highPrice") or 0)
+        low_24h = float(d.get("lowPrice") or 0)
+        open_24h = float(d.get("openPrice") or 0)
+        volume_base = float(d.get("volume") or 0)
+        quote_volume_usdt = float(d.get("quoteVolume") or 0)
+    else:
+        # OKX Spot 폴백
+        sym = usdt_symbol[:-4] if usdt_symbol.endswith("USDT") else usdt_symbol
+        inst_id = f"{sym}-USDT"
+        okx_resp = requests.get(
+            f"{OKX_API_BASE}/market/ticker",
+            params={"instId": inst_id},
+            headers=_HEADERS,
+            timeout=8,
+        )
+        okx_resp.raise_for_status()
+        rows = okx_resp.json().get("data") or []
+        if not rows:
+            raise ValueError(f"{usdt_symbol} 현물 시세를 불러올 수 없습니다.")
+        od = rows[0]
+        last_price = float(od.get("last") or 0)
+        open_24h = float(od.get("open24h") or last_price)
+        price_change = last_price - open_24h
+        change_pct = ((last_price - open_24h) / open_24h * 100.0) if open_24h else 0.0
+        high_24h = float(od.get("high24h") or last_price)
+        low_24h = float(od.get("low24h") or last_price)
+        volume_base = float(od.get("vol24h") or 0)
+        quote_volume_usdt = float(od.get("volCcy24h") or 0)
+        exchange_label = "OKX Spot"
 
     return {
         "available": True,
-        "exchange": "Binance Spot",
+        "exchange": exchange_label,
         "symbol": usdt_symbol,
         "price": last_price,
         "price_change": price_change,
@@ -268,8 +304,135 @@ def fetch_binance_spot(usdt_symbol: str) -> dict[str, Any]:
     }
 
 
+def _classify_funding_bias(funding_rate_pct: float) -> str:
+    if funding_rate_pct >= 0.03:
+        return "과열 롱 우세 (롱→숏 지급)"
+    if funding_rate_pct > 0.005:
+        return "완만한 롱 우세 (롱→숏 지급)"
+    if funding_rate_pct <= -0.02:
+        return "과열 숏 우세 (숏→롱 지급)"
+    if funding_rate_pct < -0.005:
+        return "완만한 숏 우세 (숏→롱 지급)"
+    return "중립 균형 (매수·매도 팽팽)"
+
+
+def _format_funding_countdown(next_funding_ms: int) -> tuple[str, str]:
+    if not next_funding_ms or next_funding_ms <= 0:
+        return ("-", "-")
+    next_dt = datetime.fromtimestamp(next_funding_ms / 1000.0, tz=_KST)
+    now_dt = datetime.now(_KST)
+    diff_sec = max(0, int((next_dt - now_dt).total_seconds()))
+    hours, rem = divmod(diff_sec, 3600)
+    mins = rem // 60
+    return (next_dt.strftime("%H:%M KST"), f"{hours}시간 {mins:02d}분 후")
+
+
+def _fetch_okx_futures_fallback(usdt_symbol: str, spot_price: float = 0.0) -> dict[str, Any]:
+    """미국 서버 등에서 바이낸스 선물 API(451) 차단 시 OKX 무기한 선물(USDT-SWAP)로 자동 대체."""
+    sym = usdt_symbol[:-4] if usdt_symbol.endswith("USDT") else usdt_symbol
+    inst_id = f"{sym}-USDT-SWAP"
+    result: dict[str, Any] = {
+        "available": False,
+        "exchange": "OKX Futures (USDT-SWAP)",
+        "symbol": usdt_symbol,
+    }
+    try:
+        fr_resp = requests.get(
+            f"{OKX_API_BASE}/public/funding-rate",
+            params={"instId": inst_id},
+            headers=_HEADERS,
+            timeout=8,
+        )
+        fr_rows = (fr_resp.json().get("data") or []) if fr_resp.ok else []
+        if not fr_rows:
+            result["reason"] = "무기한 선물 미지원 종목"
+            return result
+        fr_row = fr_rows[0]
+        funding_rate_pct = float(fr_row.get("fundingRate") or 0) * 100.0
+        next_funding_ms = int(fr_row.get("nextFundingTime") or fr_row.get("fundingTime") or 0)
+        next_funding_kst, countdown_str = _format_funding_countdown(next_funding_ms)
+
+        mark_price = spot_price
+        try:
+            mp_resp = requests.get(
+                f"{OKX_API_BASE}/public/mark-price",
+                params={"instType": "SWAP", "instId": inst_id},
+                headers=_HEADERS,
+                timeout=6,
+            )
+            mp_rows = (mp_resp.json().get("data") or []) if mp_resp.ok else []
+            if mp_rows:
+                mark_price = float(mp_rows[0].get("markPx") or spot_price)
+        except Exception:
+            pass
+
+        oi_coin, oi_usdt = 0.0, 0.0
+        try:
+            oi_resp = requests.get(
+                f"{OKX_API_BASE}/public/open-interest",
+                params={"instType": "SWAP", "instId": inst_id},
+                headers=_HEADERS,
+                timeout=6,
+            )
+            oi_rows = (oi_resp.json().get("data") or []) if oi_resp.ok else []
+            if oi_rows:
+                oi_coin = float(oi_rows[0].get("oiCcy") or 0)
+                oi_usdt = float(oi_rows[0].get("oiUsd") or (oi_coin * mark_price))
+        except Exception:
+            pass
+
+        fut_price, fut_change_pct, fut_vol_usdt, fut_vol_coin, fut_high, fut_low = mark_price, 0.0, 0.0, 0.0, 0.0, 0.0
+        try:
+            t_resp = requests.get(
+                f"{OKX_API_BASE}/market/ticker",
+                params={"instId": inst_id},
+                headers=_HEADERS,
+                timeout=6,
+            )
+            t_rows = (t_resp.json().get("data") or []) if t_resp.ok else []
+            if t_rows:
+                td = t_rows[0]
+                fut_price = float(td.get("last") or mark_price)
+                open24 = float(td.get("open24h") or fut_price)
+                fut_change_pct = ((fut_price - open24) / open24 * 100.0) if open24 else 0.0
+                fut_high = float(td.get("high24h") or fut_price)
+                fut_low = float(td.get("low24h") or fut_price)
+                fut_vol_coin = float(td.get("volCcy24h") or 0)
+                fut_vol_usdt = fut_vol_coin * fut_price
+        except Exception:
+            pass
+
+        ref_price = spot_price if spot_price > 0 else mark_price
+        basis_pct = ((fut_price - ref_price) / ref_price * 100.0) if ref_price > 0 else 0.0
+
+        result.update(
+            {
+                "available": True,
+                "price": fut_price,
+                "mark_price": mark_price,
+                "index_price": ref_price,
+                "change_pct": round(fut_change_pct, 2),
+                "high_24h": fut_high,
+                "low_24h": fut_low,
+                "basis_pct": round(basis_pct, 4),
+                "funding_rate_pct": round(funding_rate_pct, 4),
+                "funding_rate_annual_pct": round(funding_rate_pct * 3 * 365, 2),
+                "next_funding_kst": next_funding_kst,
+                "next_funding_countdown": countdown_str,
+                "funding_bias": _classify_funding_bias(funding_rate_pct),
+                "open_interest_coin": round(oi_coin, 2),
+                "open_interest_usdt": round(oi_usdt, 0),
+                "volume_24h_coin": fut_vol_coin,
+                "volume_24h_usdt": fut_vol_usdt,
+            }
+        )
+    except Exception as exc:
+        result["reason"] = str(exc)
+    return result
+
+
 def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str, Any]:
-    """바이낸스 무기한 선물(USDT-M Perpetual) 펀딩비, 마크가격, 미결제약정, 거래대금 조회."""
+    """바이낸스 무기한 선물(USDT-M) 조회 (지역 제한 451 시 OKX USDT-SWAP 자동 폴백)."""
     result: dict[str, Any] = {
         "available": False,
         "exchange": "Binance Futures (USDT-M)",
@@ -283,8 +446,7 @@ def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str
             timeout=8,
         )
         if not p_resp.ok:
-            result["reason"] = "해당 코인은 바이낸스 USDT 무기한 선물 미지원"
-            return result
+            return _fetch_okx_futures_fallback(usdt_symbol, spot_price=spot_price)
         p_data = p_resp.json()
 
         mark_price = float(p_data.get("markPrice") or 0)
@@ -292,30 +454,9 @@ def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str
         funding_rate = float(p_data.get("lastFundingRate") or 0)
         funding_rate_pct = funding_rate * 100.0
         next_funding_ms = int(p_data.get("nextFundingTime") or 0)
+        next_funding_kst, countdown_str = _format_funding_countdown(next_funding_ms)
+        funding_bias = _classify_funding_bias(funding_rate_pct)
 
-        next_funding_kst = "-"
-        countdown_str = "-"
-        if next_funding_ms > 0:
-            next_dt = datetime.fromtimestamp(next_funding_ms / 1000.0, tz=_KST)
-            now_dt = datetime.now(_KST)
-            diff_sec = max(0, int((next_dt - now_dt).total_seconds()))
-            hours, rem = divmod(diff_sec, 3600)
-            mins = rem // 60
-            next_funding_kst = next_dt.strftime("%H:%M KST")
-            countdown_str = f"{hours}시간 {mins:02d}분 후"
-
-        if funding_rate_pct >= 0.03:
-            funding_bias = "과열 롱 우세 (롱→숏 지급)"
-        elif funding_rate_pct > 0.005:
-            funding_bias = "완만한 롱 우세 (롱→숏 지급)"
-        elif funding_rate_pct <= -0.02:
-            funding_bias = "과열 숏 우세 (숏→롱 지급)"
-        elif funding_rate_pct < -0.005:
-            funding_bias = "완만한 숏 우세 (숏→롱 지급)"
-        else:
-            funding_bias = "중립 균형 (매수·매도 팽팽)"
-
-        # 미결제약정 (Open Interest)
         oi_coin = 0.0
         oi_usdt = 0.0
         try:
@@ -331,7 +472,6 @@ def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str
         except Exception:
             pass
 
-        # 선물 24h 티커
         fut_price = mark_price
         fut_change_pct = 0.0
         fut_vol_usdt = 0.0
@@ -380,8 +520,8 @@ def fetch_binance_futures(usdt_symbol: str, spot_price: float = 0.0) -> dict[str
                 "volume_24h_usdt": fut_vol_usdt,
             }
         )
-    except Exception as exc:
-        result["reason"] = str(exc)
+    except Exception:
+        return _fetch_okx_futures_fallback(usdt_symbol, spot_price=spot_price)
 
     return result
 
@@ -430,6 +570,37 @@ def fetch_btc_dominance() -> dict[str, Any]:
         _GLOBAL_CACHE["data"] = result
         return result
     except Exception:
+        # CoinGecko 429 제한 시 CoinPaprika Global API로 자동 폴백
+        try:
+            p_resp = requests.get("https://api.coinpaprika.com/v1/global", headers=_HEADERS, timeout=8)
+            p_resp.raise_for_status()
+            pd_data = p_resp.json() or {}
+            btc_dom = round(float(pd_data.get("bitcoin_dominance_percentage") or 0), 2)
+            eth_dom = 10.0
+            alt_dom = round(max(0.0, 100.0 - btc_dom - eth_dom), 2)
+            total_mcap = float(pd_data.get("market_cap_usd") or 0)
+            mcap_chg_24h = round(float(pd_data.get("market_cap_change_24h") or 0), 2)
+            if btc_dom > 0:
+                if btc_dom >= 55.0:
+                    interp = "비트코인 독주 구간 (자금이 BTC에 집중 → 알트코인 상대 약세 유의)"
+                elif btc_dom <= 48.0:
+                    interp = "알트코인 강세 구간 (BTC 비중 하락 → 알트코인 순환매 활발)"
+                else:
+                    interp = "균형 구간 (BTC와 주요 알트코인 동반 수급)"
+                result = {
+                    "available": True,
+                    "btc_dominance": btc_dom,
+                    "eth_dominance": eth_dom,
+                    "alt_dominance": alt_dom,
+                    "total_market_cap_usd": round(total_mcap, 0),
+                    "market_cap_change_24h_pct": mcap_chg_24h,
+                    "interpretation": interp,
+                }
+                _GLOBAL_CACHE["ts"] = now
+                _GLOBAL_CACHE["data"] = result
+                return result
+        except Exception:
+            pass
         return _GLOBAL_CACHE["data"] or {"available": False}
 
 
@@ -651,6 +822,44 @@ def fetch_crypto_heatmap(limit: int = 30, include_stables: bool = False) -> list
         _HEATMAP_CACHE["items"] = items
         return items
     except Exception:
+        # CoinGecko 429 제한 시 CoinPaprika Tickers API로 자동 폴백
+        try:
+            p_resp = requests.get(
+                "https://api.coinpaprika.com/v1/tickers",
+                params={"limit": min(80, limit + 25)},
+                headers=_HEADERS,
+                timeout=10,
+            )
+            p_resp.raise_for_status()
+            items = []
+            for row in p_resp.json() or []:
+                sym = str(row.get("symbol") or "").upper()
+                if not sym or (not include_stables and sym in _STABLE_SYMBOLS):
+                    continue
+                usd = (row.get("quotes") or {}).get("USD") or {}
+                mcap = float(usd.get("market_cap") or 0)
+                if mcap <= 0:
+                    continue
+                items.append(
+                    {
+                        "symbol": sym,
+                        "usdt_symbol": f"{sym}USDT",
+                        "name": str(row.get("name") or sym),
+                        "price": float(usd.get("price") or 0),
+                        "market_cap": mcap,
+                        "change_24h": round(float(usd.get("percent_change_24h") or 0), 2),
+                        "volume_24h": float(usd.get("volume_24h") or 0),
+                    }
+                )
+                if len(items) >= limit:
+                    break
+            if items:
+                _HEATMAP_CACHE["ts"] = now
+                _HEATMAP_CACHE["key"] = cache_key
+                _HEATMAP_CACHE["items"] = items
+                return items
+        except Exception:
+            pass
         return _HEATMAP_CACHE["items"] or []
 
 
@@ -719,25 +928,63 @@ def fetch_coin_chart_with_indicators(
     interval, is_minute = tf_map.get(timeframe, ("1d", False))
 
     use_futures = (market_type or "spot").lower() == "futures"
-    base_url = f"{BINANCE_FUTURES_BASE}/klines" if use_futures else f"{BINANCE_SPOT_BASE}/klines"
+    raw_rows = []
+    if use_futures:
+        try:
+            resp = requests.get(
+                f"{BINANCE_FUTURES_BASE}/klines",
+                params={"symbol": usdt_symbol, "interval": interval, "limit": 200},
+                headers=_HEADERS,
+                timeout=8,
+            )
+            if resp.ok:
+                raw_rows = resp.json() or []
+        except Exception:
+            pass
+        if not raw_rows:
+            # 미국 서버 등 바이낸스 선물 451 시 OKX SWAP 캔들 폴백
+            try:
+                sym = usdt_symbol[:-4] if usdt_symbol.endswith("USDT") else usdt_symbol
+                okx_bar = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "1d": "1D", "1w": "1W", "1M": "1M"}.get(interval, "1D")
+                o_resp = requests.get(
+                    f"{OKX_API_BASE}/market/candles",
+                    params={"instId": f"{sym}-USDT-SWAP", "bar": okx_bar, "limit": 200},
+                    headers=_HEADERS,
+                    timeout=8,
+                )
+                if o_resp.ok and o_resp.json().get("data"):
+                    raw_rows = list(reversed(o_resp.json()["data"]))
+            except Exception:
+                pass
 
-    resp = requests.get(
-        base_url,
-        params={"symbol": usdt_symbol, "interval": interval, "limit": 200},
-        headers=_HEADERS,
-        timeout=10,
-    )
-    if not resp.ok and use_futures:
-        # 선물 미지원 코인일 경우 현물 캔들로 자동 폴백
+    if not raw_rows:
         use_futures = False
-        resp = requests.get(
-            f"{BINANCE_SPOT_BASE}/klines",
-            params={"symbol": usdt_symbol, "interval": interval, "limit": 200},
+        for spot_base in (BINANCE_SPOT_BASE, BINANCE_VISION_SPOT_BASE):
+            try:
+                resp = requests.get(
+                    f"{spot_base}/klines",
+                    params={"symbol": usdt_symbol, "interval": interval, "limit": 200},
+                    headers=_HEADERS,
+                    timeout=8,
+                )
+                if resp.ok and resp.json():
+                    raw_rows = resp.json()
+                    break
+            except Exception:
+                continue
+
+    if not raw_rows:
+        sym = usdt_symbol[:-4] if usdt_symbol.endswith("USDT") else usdt_symbol
+        okx_bar = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "1d": "1D", "1w": "1W", "1M": "1M"}.get(interval, "1D")
+        o_resp = requests.get(
+            f"{OKX_API_BASE}/market/candles",
+            params={"instId": f"{sym}-USDT", "bar": okx_bar, "limit": 200},
             headers=_HEADERS,
-            timeout=10,
+            timeout=8,
         )
-    resp.raise_for_status()
-    raw_rows = resp.json()
+        o_resp.raise_for_status()
+        raw_rows = list(reversed(o_resp.json().get("data") or []))
+
     if not raw_rows:
         raise ValueError(f"{usdt_symbol} 차트 데이터를 불러오지 못했습니다.")
 
@@ -909,6 +1156,30 @@ def fetch_liquidation_roadmap(
             taker_buy_sell_ratio = round(float(r3.json()[0].get("buySellRatio", 1.0)), 2)
     except Exception:
         pass
+
+    # 미국 서버 등으로 바이낸스 롱/숏 비율이 기본값(50/50)일 경우 OKX Rubik 롱/숏 비율로 폴백
+    if global_ls_ratio == 1.0 and top_ls_ratio == 1.0:
+        try:
+            sym = usdt_symbol[:-4] if usdt_symbol.endswith("USDT") else usdt_symbol
+            okx_ls = requests.get(
+                f"{OKX_API_BASE}/rubik/stat/contracts/long-short-account-ratio",
+                params={"ccy": sym, "period": "1H"},
+                headers=_HEADERS,
+                timeout=6,
+            )
+            rows = (okx_ls.json().get("data") or []) if okx_ls.ok else []
+            if rows:
+                ratio = float(rows[0][1])
+                l_pct = round((ratio / (1.0 + ratio)) * 100.0, 2)
+                s_pct = round(100.0 - l_pct, 2)
+                global_long_pct = l_pct
+                global_short_pct = s_pct
+                global_ls_ratio = round(ratio, 2)
+                top_long_pct = l_pct
+                top_short_pct = s_pct
+                top_ls_ratio = round(ratio, 2)
+        except Exception:
+            pass
 
     oi_total = float(open_interest_usdt or 0.0)
     oi_long_usdt = round(oi_total * (top_long_pct / 100.0), 0)
