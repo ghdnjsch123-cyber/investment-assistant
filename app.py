@@ -318,12 +318,29 @@ def chat_analysis():
             f"--- 요청 내용 ---\n{question}"
         )
 
-        dify_res = ask_dify_chatbot(
-            bot_type="analysis",
-            query=enriched_query,
-            inputs={"stock_data": stock_json, "stock_code": code, "stock_name": stock_name},
-            conversation_id="",
-        )
+        try:
+            dify_res = ask_dify_chatbot(
+                bot_type="analysis",
+                query=enriched_query,
+                inputs={"stock_data": stock_json, "stock_code": code, "stock_name": stock_name},
+                conversation_id="",
+            )
+        except Exception as ai_err:
+            logger.warning("[AI-FALLBACK] /api/chat/analysis AI 일시 지연 (%s) - 정량 요약 제공", ai_err)
+            snap = stock_data.get("snapshot") or {}
+            tech = stock_data.get("technical") or {}
+            dify_res = {
+                "conversation_id": "",
+                "answer": (
+                    f"### ⚠️ AI 서술형 리포트 일시 지연 안내\n"
+                    f"- 외부 AI 모델 트래픽 과부하로 서술형 리포트 생성이 일시 지연되었습니다. 아래 실시간 수집 지표와 상단 차트는 정상 반영되었습니다.\n\n"
+                    f"### 📊 {stock_name} ({code}) 실시간 정량 요약\n"
+                    f"- **현재가**: {snap.get('current_price', '-')} (등락률 {snap.get('change_rate', '-')}%)\n"
+                    f"- **52주 구간 위치**: {snap.get('position_52w', '-')}%\n"
+                    f"- **기술지표**: RSI(14) `{tech.get('rsi14', '-')}` · MA20 `{tech.get('ma20', '-')}` · 볼린저 위치 `{tech.get('bb_position_pct', '-')}%`\n"
+                    f"- 잠시 후 다시 분석을 요청하시면 AI 애널리스트 해설이 함께 생성됩니다."
+                ),
+            }
 
         logger.info("[RESPONSE] /api/chat/analysis 최초 애널리스트 분석 완료 (code=%s, name=%s)", code, stock_name)
         return jsonify({
@@ -550,12 +567,32 @@ def coin_analysis():
             f"--- 요청 내용 ---\n{question}"
         )
 
-        dify_res = ask_dify_chatbot(
-            bot_type="analysis",
-            query=enriched_query,
-            inputs={"stock_data": coin_json, "stock_code": market, "stock_name": coin_name},
-            conversation_id="",
-        )
+        try:
+            dify_res = ask_dify_chatbot(
+                bot_type="analysis",
+                query=enriched_query,
+                inputs={"stock_data": coin_json, "stock_code": market, "stock_name": coin_name},
+                conversation_id="",
+            )
+        except Exception as ai_err:
+            logger.warning("[AI-FALLBACK] /api/coin/analysis AI 일시 지연 (%s) - 정량 요약 제공", ai_err)
+            sp = coin_data.get("spot") or {}
+            ft = coin_data.get("futures") or {}
+            fg = coin_data.get("fear_greed") or {}
+            dm = coin_data.get("btc_dominance") or {}
+            lr = coin_data.get("liquidation_roadmap") or {}
+            dify_res = {
+                "conversation_id": "",
+                "answer": (
+                    f"### ⚠️ AI 서술형 리포트 일시 지연 안내\n"
+                    f"- 외부 AI 모델 트래픽 과부하로 서술형 리포트 생성이 일시 지연되었습니다. 상단 차트·현물/선물·펀딩비·청산 로드맵·거시지표 패널은 실시간 정상 수집되었습니다.\n\n"
+                    f"### 🪙 {coin_name} ({market}) 실시간 정량 요약\n"
+                    f"- **현물(Spot)**: `${sp.get('price', '-')}` (`{sp.get('change_pct', '-')}%`)\n"
+                    f"- **선물·펀딩비**: 펀딩비 `{ft.get('funding_rate_pct', '-')}%` · 미결제약정 `${ft.get('open_interest_usdt', '-')}`\n"
+                    f"- **시장 심리·도미넌스**: 공포·탐욕 `{fg.get('value', '-')}점 ({fg.get('classification_kr', '-')})` · BTC 도미넌스 `{dm.get('btc_dominance', '-')}%`\n"
+                    f"- **청산 로드맵 진단**: {lr.get('squeeze_diagnosis', '-')}\n"
+                ),
+            }
 
         coin_data["tv_chart"] = tv_chart
         logger.info("[RESPONSE] /api/coin/analysis 완료 (market=%s)", market)

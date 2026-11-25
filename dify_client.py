@@ -39,7 +39,7 @@ def _fallback_gemini(query: str) -> dict | None:
         from google import genai
 
         client = genai.Client(api_key=gemini_key)
-        for model_name in ("gemini-2.5-flash", "gemini-2.0-flash"):
+        for model_name in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
             try:
                 resp = client.models.generate_content(model=model_name, contents=query)
                 text = (getattr(resp, "text", "") or "").strip()
@@ -91,7 +91,7 @@ def ask_dify_chatbot(
     last_detail = ""
     for attempt in range(2):
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            resp = requests.post(url, headers=headers, json=payload, timeout=25)
         except requests.Timeout as e:
             if attempt == 0:
                 time.sleep(1.5)
