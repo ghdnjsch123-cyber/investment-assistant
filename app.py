@@ -19,8 +19,12 @@ from coin_client import (
     fetch_crypto_heatmap,
 )
 
-# .env 환경변수 로드
-load_dotenv()
+# .env 환경변수 로드 (실행 경로와 무관하게 프로젝트 루트의 .env를 우선 로드)
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_ENV_PATH):
+    load_dotenv(_ENV_PATH, override=True)
+else:
+    load_dotenv()
 
 # 로깅 설정 (print 대신 logging 모듈 사용)
 logging.basicConfig(

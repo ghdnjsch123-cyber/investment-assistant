@@ -3,7 +3,11 @@ import logging
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_ENV_PATH):
+    load_dotenv(_ENV_PATH, override=True)
+else:
+    load_dotenv()
 
 logger = logging.getLogger("StockAssistant")
 
