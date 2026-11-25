@@ -19,8 +19,7 @@
       </div>
       <div class="header-actions">
         <a href="/test" class="nav-link-btn" target="_blank">수집기 테스트(/test)</a>
-        <button type="button" id="openApiSettingsBtn" class="nav-link-btn">⚙️ API 키 설정</button>
-        <div id="healthStatus" class="health-badge checking" title="클릭하여 API 키 설정 열기">서버 상태 확인 중...</div>
+        <div id="healthStatus" class="health-badge checking">서버 상태 확인 중...</div>
       </div>
     </header>
 
@@ -589,44 +588,6 @@
     </section>
   </div>
 
-  <!-- API 키 설정 모달 (다른 PC에서도 UI로 .env 즉시 설정) -->
-  <div id="apiSettingsModal" class="api-modal hidden" role="dialog" aria-modal="true" aria-labelledby="apiModalTitle">
-    <div class="api-modal-backdrop" id="apiModalBackdrop"></div>
-    <div class="api-modal-dialog">
-      <div class="api-modal-head">
-        <h3 id="apiModalTitle">⚙️ API 키 및 환경설정 (.env)</h3>
-        <button type="button" id="closeApiSettingsBtn" class="secondary-btn">닫기</button>
-      </div>
-      <p class="panel-desc">새 PC에서 실행 시 아래 키를 입력하고 저장하면 로컬 <code>.env</code> 파일에 즉시 저장·적용됩니다. (이미 연결된 키는 비워두면 기존 값이 유지됩니다)</p>
-      <form id="apiSettingsForm" class="api-settings-form">
-        <div class="api-field">
-          <label for="envDifyBaseUrl">DIFY_BASE_URL <span id="status_DIFY_BASE_URL" class="api-key-status"></span></label>
-          <input type="text" id="envDifyBaseUrl" name="DIFY_BASE_URL" placeholder="https://api.dify.ai/v1" />
-        </div>
-        <div class="api-field">
-          <label for="envDifyAnalysisKey">DIFY_ANALYSIS_API_KEY (종목·코인 AI 분석) <span id="status_DIFY_ANALYSIS_API_KEY" class="api-key-status"></span></label>
-          <input type="password" id="envDifyAnalysisKey" name="DIFY_ANALYSIS_API_KEY" placeholder="새 키 입력 시에만 작성 (app-...)" autocomplete="off" />
-        </div>
-        <div class="api-field">
-          <label for="envDifyTechKey">DIFY_TECHNICAL_API_KEY (기술지표 AI 해석) <span id="status_DIFY_TECHNICAL_API_KEY" class="api-key-status"></span></label>
-          <input type="password" id="envDifyTechKey" name="DIFY_TECHNICAL_API_KEY" placeholder="새 키 입력 시에만 작성 (app-...)" autocomplete="off" />
-        </div>
-        <div class="api-field">
-          <label for="envSerperKey">SERPER_API_KEY (구글 뉴스 검색) <span id="status_SERPER_API_KEY" class="api-key-status"></span></label>
-          <input type="password" id="envSerperKey" name="SERPER_API_KEY" placeholder="새 키 입력 시에만 작성" autocomplete="off" />
-        </div>
-        <div class="api-field">
-          <label for="envDartKey">DART_API_KEY (금융감독원 전자공시) <span id="status_DART_API_KEY" class="api-key-status"></span></label>
-          <input type="password" id="envDartKey" name="DART_API_KEY" placeholder="새 키 입력 시에만 작성" autocomplete="off" />
-        </div>
-        <div id="apiSettingsMsg" class="status-box hidden"></div>
-        <div class="api-modal-actions">
-          <button type="submit" id="saveApiSettingsBtn" class="primary-small-btn">저장 및 즉시 적용</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <script src="{{ url_for('static', filename='app.js') }}?v=21"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=22"></script>
 </body>
 </html>

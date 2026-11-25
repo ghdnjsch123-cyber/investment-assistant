@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: my-investment-assistant
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+    envVars:
+      - key: DIFY_BASE_URL
+        value: https://api.dify.ai/v1
+      - key: DIFY_ANALYSIS_API_KEY
+        sync: false
+      - key: DIFY_TECHNICAL_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: DART_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FLASK_DEBUG
+        value: "false"

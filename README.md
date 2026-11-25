@@ -1,30 +1,28 @@
 # 📈 나의 투자도우미 (My Investment Assistant)
 
-국내/미국 주식, ETF, 가상자산(바이낸스 USDT 현물·선물·펀딩비·청산 로드맵·히트맵·공포탐욕·도미넌스·미국 거시지표)을 실시간으로 수집·시각화하고 Dify AI로 분석하는 웹 대시보드입니다.
+국내/미국 주식, ETF, 가상자산(바이낸스 USDT 현물·선물·펀딩비·청산 로드맵·히트맵·공포탐욕·도미넌스·미국 거시지표)을 실시간으로 수집·시각화하고 Dify AI로 분석하는 웹 서비스입니다.
 
 ---
 
-## 다른 PC에서 바로 실행하기 (1분 셋업)
+## 🌐 누구나 웹 주소로 바로 이용하게 배포하기 (권장 · 보안 안전)
 
-### 1) 저장소 클론
-```bash
-git clone https://github.com/ghdnjsch123-cyber/investment-assistant.git
-cd investment-assistant
-```
+API 키를 GitHub나 프론트엔드 코드에 노출하지 않고, **서버 환경변수에만 안전하게 저장**해두면 어떤 PC/모바일에서 접속해도 별도 키 입력 없이 모든 기능을 즉시 이용할 수 있습니다.
 
-### 2) 원클릭 실행
-- **Windows**: `run_windows.bat` 더블클릭 (또는 터미널에서 `run_windows.bat`)
-  - `venv` 생성 → `requirements.txt` 설치 → `.env` 자동 생성 → 브라우저(`http://127.0.0.1:5050`) 자동 실행
-- **macOS / Linux**:
-```bash
-bash run_mac_linux.sh
-```
+### Render 무료/유료 웹 배포 방법 (`render.yaml` / `Procfile` 포함)
+1. [Render](https://render.com) 로그인 → **New +** → **Blueprint** (또는 **Web Service**) 선택
+2. GitHub 저장소 `ghdnjsch123-cyber/investment-assistant` 연결
+3. Render 대시보드의 **Environment** 탭에 아래 비밀키 등록:
+   - `DIFY_BASE_URL`: `https://api.dify.ai/v1`
+   - `DIFY_ANALYSIS_API_KEY`
+   - `DIFY_TECHNICAL_API_KEY`
+   - `SERPER_API_KEY`
+   - `DART_API_KEY`
+   - `GEMINI_API_KEY`
+4. 배포 완료 후 생성된 URL(`https://xxx.onrender.com`)에 접속하면 **어느 PC에서나 로그인·키 입력 없이 바로 사용**할 수 있습니다.
 
-### 3) API 키 설정 (웹 화면에서 바로 입력 가능!)
-1. 브라우저(`http://127.0.0.1:5050`) 상단의 **`⚙️ API 키 설정`** 버튼을 클릭합니다.
-2. 아래 API 키를 입력하고 **저장 및 즉시 적용**을 누르면 로컬 `.env` 파일에 자동 저장됩니다.
-   - `DIFY_ANALYSIS_API_KEY`: 종목·코인 종합 AI 분석 챗봇 키
-   - `DIFY_TECHNICAL_API_KEY`: 기술적 지표 AI 해석 챗봇 키
-   - `SERPER_API_KEY`: 구글 뉴스 검색 키
-   - `DART_API_KEY`: 금융감독원 Open DART 공시·재무제표 키
-   - *(바이낸스 현물/선물/펀딩비/청산 로드맵, 크립토 히트맵, 공포·탐욕 지수, BTC 도미넌스, 미국 거시지표 일정은 별도 API 키 없이 즉시 작동합니다.)*
+---
+
+## 💻 로컬 PC에서 직접 실행하기
+
+- **Windows**: `run_windows.bat` 실행
+- **macOS / Linux**: `bash run_mac_linux.sh`
